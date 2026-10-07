@@ -31,7 +31,7 @@ tools:
     mode: local
     min-integrity: approved
     toolsets: [repos, issues, pull_requests]
-    allowed-repos: ["${{ github.repository }}"]
+    allowed-repos: ["rickardhf/autonomous-developer-workflows"]
     allowed:
       - get_file_contents
       - list_commits
