@@ -513,7 +513,7 @@ jobs:
           GH_AW_GITHUB_TOKEN: ${{ secrets.GH_AW_GITHUB_TOKEN }}
           GH_AW_GITHUB_MCP_SERVER_TOKEN: ${{ secrets.GH_AW_GITHUB_MCP_SERVER_TOKEN }}
           GH_AW_GITHUB_MIN_INTEGRITY: 'approved'
-          GH_AW_GITHUB_REPOS: '["${{ github.repository }}"]'
+          GH_AW_GITHUB_REPOS: '["rickardhf/autonomous-developer-workflows"]'
         with:
           script: |
             const path = require('path');
@@ -744,7 +744,7 @@ jobs:
                     "blocked-users": ${{ steps.parse-guard-vars.outputs.blocked_users }},
                     "min-integrity": "approved",
                     "repos": [
-                      "${{ github.repository }}"
+                      "rickardhf/autonomous-developer-workflows"
                     ],
                     "trusted-users": ${{ steps.parse-guard-vars.outputs.trusted_users }}
                   }
