@@ -28,6 +28,14 @@ Participants learn how to move from individual customizations to reliable agenti
 > The badge is updated by successful runs of the
 > [Evaluate Agents & Skills](./.github/workflows/evaluate.yml) workflow.
 
+The [PR regression check](./.github/workflows/evaluation-regression.yml) evaluates changed
+`*.agent.md` files and complete skills under `.github/`, `.agents/`, and `.claude/`.
+It compares freshly evaluated main and PR versions, failing if any score drops by **more than
+one point** or evaluation is incomplete. It runs on non-draft PR creation and subsequent commits,
+and when a draft becomes ready. GitHub's repository approval setting controls fork workflow runs.
+See [merge-gate setup](./docs/evaluator.md#making-the-check-required-on-main) to require the check
+on `main` after publishing the workflow.
+
 ## Getting Started
 
 ### Pre-Exercise Steps
@@ -84,6 +92,14 @@ Reference documentation lives in the [/docs](/docs/) folder:
 
 The repository also contains GitHub Actions workflows that orchestrate agents. See
 [Agent orchestration](./docs/agent-orchestration.md) for the current pipeline and its guardrails.
+
+To manually prioritize the entire issue backlog, use **Actions -> AI Issue
+Priority Triage -> Run workflow**. It assigns exactly one of `high`, `medium`,
+`low`, or `blocked`, preserves unrelated labels, explains priority changes, and
+groups cohesive tasks using reusable native parent/sub-issue relationships.
+Check `dry_run` for a mutation-free preview. No separate Copilot token is needed;
+see [manual issue triage](./docs/agent-orchestration.md#manual-ai-issue-priority-triage)
+for authentication, operation, and recovery details.
 
 The [/evaluator](/evaluator/) tool discovers agent and skill definitions in the supported
 `.github/` and `.agents/` locations, evaluates them with AI, and assigns each one a score. It can

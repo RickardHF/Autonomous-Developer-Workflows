@@ -1,0 +1,94 @@
+name: Evaluate Changed Agents & Skills
+
+on:
+  pull_request:
+    branches: [main]
+    types: [opened, synchronize, reopened, ready_for_review]
+
+concurrency:
+  group: evaluation-regression-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+permissions: {}
+
+jobs:
+  regression:
+    name: Agent and skill score regression
+    if: github.event.pull_request.draft == false
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    permissions:
+      contents: read
+      copilot-requests: write
+
+    steps:
+      - name: Checkout the exact PR head
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Capture the main revision
+        id: refs
+        run: echo "main_sha=$(git rev-parse refs/remotes/origin/main)" >> "$GITHUB_OUTPUT"
+
+      - name: Checkout the captured main revision
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ steps.refs.outputs.main_sha }}
+          path: _evaluation_main
+          persist-credentials: false
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: "24"
+
+      - name: Discover changed agents and skills
+        id: discover
+        env:
+          MAIN_SHA: ${{ steps.refs.outputs.main_sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          node evaluator/regression.ts discover \
+            --repository "$GITHUB_WORKSPACE" \
+            --main-ref "$MAIN_SHA" \
+            --head-ref "$HEAD_SHA" \
+            --output "$RUNNER_TEMP/evaluation-regression"
+
+      - name: Install main's evaluator dependencies
+        if: steps.discover.outputs.has_artifacts == 'true'
+        working-directory: _evaluation_main/evaluator
+        run: npm ci
+
+      - name: Install Copilot CLI
+        if: steps.discover.outputs.has_artifacts == 'true'
+        uses: ./_evaluation_main/.github/actions/setup-copilot-cli
+
+      - name: Evaluate and compare changed artifacts
+        if: steps.discover.outputs.has_artifacts == 'true'
+        env:
+          COPILOT_GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          node evaluator/regression.ts evaluate \
+            --main-directory "$GITHUB_WORKSPACE/_evaluation_main" \
+            --candidate-directory "$GITHUB_WORKSPACE" \
+            --output "$RUNNER_TEMP/evaluation-regression"
+
+      - name: Publish comparison summary
+        if: always()
+        run: |
+          if [ -f "$RUNNER_TEMP/evaluation-regression/summary.md" ]; then
+            cat "$RUNNER_TEMP/evaluation-regression/summary.md" >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "Regression check did not complete. See the job logs for the failure." >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - name: Upload comparison evidence
+        if: always() && (steps.discover.outcome == 'success' || steps.discover.outcome == 'failure')
+        uses: actions/upload-artifact@v7
+        with:
+          name: evaluation-regression-${{ github.event.pull_request.number }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/evaluation-regression/
+          if-no-files-found: warn

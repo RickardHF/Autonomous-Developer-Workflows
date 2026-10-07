@@ -17,7 +17,8 @@
     "typecheck": "tsc --noEmit",
     "build": "tsc",
     "postbuild": "chmod +x dist/cli.js",
-    "test": "node --import tsx --test --experimental-test-module-mocks cli.test.ts evaluate.test.ts"
+    "test": "node --import tsx --test --experimental-test-module-mocks cli.test.ts evaluate.test.ts regression.test.ts",
+    "test:regression": "node --import tsx --test --experimental-test-module-mocks regression.test.ts"
   },
   "devDependencies": {
     "@types/node": "^22.0.0",

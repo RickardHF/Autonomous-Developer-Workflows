@@ -83,7 +83,7 @@ program
             }
             // Get all files in the skill directory. We need an array of objects with the relative path and content for each item.
             // Ignore the SKILL.md file itself when collecting all other files in the skill directory
-            const skillFiles = await glob([path.posix.join(skillDirectory, "**/*")], { mark: true });
+            const skillFiles = await glob([path.posix.join(skillDirectory, "**/*")], { mark: true, dot: true });
             const skillFileContents = [];
             for (const skillFile of skillFiles) {
                 if (fs.existsSync(skillFile) && fs.statSync(skillFile).isFile() && path.posix.basename(skillFile) !== "SKILL.md") {

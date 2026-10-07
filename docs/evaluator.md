@@ -21,7 +21,10 @@ Local runs require an authenticated GitHub Copilot SDK environment. Use the repo
 | `--json` | Write one JSON result per line, suitable for later processing. |
 | `--files <files...>` | Explicitly evaluates one or more agent files and/or skill directories. Accepts individual paths or comma-separated values in a single argument. |
 
-The evaluator finds agents in `.github/agents/` and `.agents/agents/`, and skills in `.agents/skills/` and `.github/skills/`. Each skill must contain a root `SKILL.md`.
+Automatic discovery finds agents in `.github/agents/` and `.agents/agents/`, and skills in
+`.agents/skills/` and `.github/skills/`. Each skill must contain a root `SKILL.md`. Explicit
+`--files` targets also support `.claude/` definitions. Skill evaluation includes supporting
+files, including hidden files, in addition to the root definition.
 
 ### Run a specific agent or skill
 
@@ -55,6 +58,80 @@ If the command succeeds, each JSON line should have this shape:
 For an explicit `--files` run, `fileName` is relative to the directory where the evaluator
 command runs. For an automatic `--directory` scan, it is relative to the search directory.
 Evaluation failures are written to stderr; successful results continue to be emitted as JSONL.
+
+## Pull request regression check
+
+The [Evaluate Changed Agents & Skills](../.github/workflows/evaluation-regression.yml) workflow
+publishes the check **Agent and skill score regression** on PRs targeting `main`.
+It runs when a non-draft PR is opened, reopened, or receives new commits, and when a draft PR
+becomes ready for review. Draft PRs do not run evaluation. Fork workflow runs follow GitHub's
+built-in repository approval setting; the workflow has no custom fork-handling code.
+
+The gate selects changed `*.agent.md` files anywhere within `.github/`, `.agents/`, and
+`.claude/`, and skill directories identified by `SKILL.md` in those roots. Changes to any skill
+supporting file, including hidden files and supporting-file deletions, select the complete skill
+once. Other `.md` files are not automatically treated as agent definitions.
+
+For each selected artifact, the runner evaluates its PR version and its version on the captured
+current `main` revision. Both use the evaluator CLI and dependencies from that main revision.
+The changed-file list covers the entire PR, not only the latest commit, and Git-detected
+definition renames retain their previous path as the baseline.
+
+| Situation | Outcome |
+| --- | --- |
+| Score improves, stays equal, or drops by exactly 1 point | Pass |
+| Score drops by more than 1 point | Fail |
+| New artifact absent from main | Previous score is 0; evaluate the new artifact |
+| Deleted agent or entire skill | Report deletion; exclude it from score comparison |
+| Deleted supporting file in a surviving skill | Evaluate the remaining complete skill |
+| No relevant surviving artifact changes | Pass without installing evaluator dependencies or making Copilot requests |
+| Failed evaluation, malformed JSON, invalid scores, missing/duplicate/unexpected results | Fail, even if the evaluator process exits successfully |
+
+The workflow captures exact main and PR head commit SHAs, cancels obsolete runs for the same
+PR, and publishes per-artifact scores, changes, and both sets of reasoning in its summary.
+Its evidence artifact contains the selection manifest, raw JSONL, comparison results, and
+evaluation diagnostics. It does not commit badges or scores to PR branches.
+
+Scores are AI-generated and may vary between runs. Evaluating both snapshots provides a
+same-run comparison but consumes Copilot requests for both versions of existing artifacts.
+Scores are not averaged across artifacts, and failed scores are not automatically retried
+until they pass.
+
+The regression runner uses Node.js 24's native TypeScript support. Its deterministic tests do
+not require Copilot authentication:
+
+```bash
+cd evaluator
+npm run test:regression
+npm run typecheck
+npm run build
+```
+
+The existing `npm test` command also runs live evaluator tests and requires an authenticated
+Copilot environment.
+
+### Restricting fork workflow runs
+
+Use GitHub's built-in repository setting in **Settings -> Actions ->
+General -> Approval for running fork pull request workflows from contributors**, require
+approval for **all external contributors**. Users without write access cannot execute fork PR
+workflows without a maintainer's approval. PR handling remains unchanged; no custom guards are
+needed. Configure this setting separately in new template copies.
+
+### Making the check required on main
+
+A failed workflow does not block merges unless GitHub requires its check. Publish the new
+workflow and verify a non-draft same-repository PR reports **Agent and skill score regression**
+before enabling enforcement; requiring an unpublished check can lock the branch.
+
+In **Settings -> Rules -> Rulesets**, create an active branch ruleset targeting `main`.
+Enable **Require status checks to pass**, select **Agent and skill score regression**,
+and enable **Require branches to be up to date before merging**. The latter ensures a passing
+comparison against an outdated main revision cannot authorize a merge.
+
+Do not add workflow-level path filters: PRs without artifact changes still need a successful
+no-op check rather than a required check left pending. Keep the required context aligned with
+the workflow job's `name` when changing the workflow.
 
 ## Create a badge
 

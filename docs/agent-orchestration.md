@@ -14,6 +14,130 @@ protection depend on repository branch rules outside these workflows.
 | [Plan and Implement](../.github/workflows/plan-implement.yml) | `issues.labeled` (`copilot:plan-and-implement`) or `workflow_dispatch` | Plans, risk-scores, and implements the change on an agent branch. |
 | [Plan Gate](../.github/workflows/plan-gate.yml)               | `pull_request` to `main`                                               | Checks the required plan text on PRs authored by `github-actions[bot]`; it is skipped for other authors. |
 | [Evaluate Agents & Skills](../.github/workflows/evaluate.yml) | `workflow_dispatch`                                                    | Scores agent/skill definitions and publishes a badge.             |
+| [AI Issue Priority Triage](../.github/workflows/issue-priority-triage.md) | `workflow_dispatch` only | Prioritizes every open issue and groups cohesive work using native sub-issues. |
+
+## Manual AI issue priority triage
+
+The [agentic workflow source](../.github/workflows/issue-priority-triage.md) uses
+the Copilot engine; its generated
+[`.lock.yml`](../.github/workflows/issue-priority-triage.lock.yml) is the workflow
+GitHub Actions executes. Both must be present on the default branch before use.
+This workflow does not start implementation, assign agents, close issues, or
+modify the existing planning/evaluation workflows.
+
+In **Actions -> AI Issue Priority Triage -> Run workflow**, leave `dry_run`
+unchecked to apply decisions, or check it to preview without changing issues.
+For example, preview from the command line:
+
+```bash
+gh workflow run issue-priority-triage.lock.yml -f dry_run=true
+```
+
+To apply, use the same command with `-f dry_run=false`. Runs are serialized across
+the repository, including dispatches from different refs, rather than cancelling
+an in-progress reconciliation. Analysis uses the default branch's current code
+and requirements.
+
+### Priority policy
+
+Each open issue, including new overarching tasks, ends a successful run with
+**exactly one** of these labels. Only these four exact lowercase names are
+managed; labels such as `bug` and `copilot:plan-and-implement` remain untouched.
+Missing managed label definitions are created during apply, not during preview.
+
+| Label | Meaning |
+| --- | --- |
+| `high` | Serious bugs, urgent work, or the most sensible actionable next work given the current repository. Tasks that unlock other work can be high. |
+| `medium` | Useful planned work that is not the next highest priority. |
+| `low` | Optional improvements or work with little current payoff. |
+| `blocked` | Unfinished prerequisite tasks prevent meaningful progress. This overrides urgency, including otherwise-high work. |
+
+Initial assignment, actual priority changes, and repairs of conflicting priority
+labels receive a comment with the previous labels, new priority, reasoning,
+prerequisite references, analyzed repository revision, and workflow-run link.
+Already-correct priorities do not receive repeated comments. Old reasoning stays
+in the issue history. Blocked work is reassessed **only on the next manual run**,
+not automatically when its prerequisite closes.
+
+Native dependencies and evidence-backed dependencies written in issue bodies or
+comments inform the decision. A parent/sub-issue relationship alone does not
+make an issue blocked. The AI must inspect actual implementation progress;
+an open PR or an issue closed as "not planned" is not evidence that work shipped.
+
+### Reusable parent tasks
+
+The workflow can group at least two existing open leaf issues under a coherent
+overarching task, with an outcome, shared-work rationale, and acceptance criteria.
+It creates **native GitHub sub-issue links**, not just a Markdown checklist, and
+assigns the new parent its own priority and reasoning comment.
+
+Compatible open parents are reused. Generated parents contain stable group and
+original-member markers so an expanded or interrupted group can be recovered.
+The workflow never moves an issue away from its existing parent, removes
+children, replaces human-created parent descriptions, recursively wraps old
+groups, or reopens/closes parents. GitHub's limits of 100 sub-issues and eight
+hierarchy levels are enforced.
+
+### Authentication, guardrails, and recovery
+
+**No separate Copilot token or PAT is required.** Inference uses the built-in
+Actions token with `copilot-requests: write`; API operations also use the
+per-run token. In a personally owned repository, usage is billed to the owner's
+Copilot seat. For organization-owned repositories, enable **Allow use of
+Copilot CLI billed to the organization** in the organization's Copilot policy.
+GitHub Actions and Copilot inference access must be available.
+
+See the current GitHub references for
+[authentication and billing](https://docs.github.com/en/copilot/concepts/agents/copilot-cli/copilot-cli-in-github-actions)
+and [Actions setup](https://docs.github.com/en/copilot/how-tos/copilot-cli/use-copilot-cli-in-actions).
+Older gh-aw setup text describing the tokenless path only for organizations
+does not reflect the newer personal-repository support.
+
+A separate read-only job enumerates the complete backlog, comments,
+relationships, and closed-issue context using pagination. Issue/repository text
+is untrusted data. The Copilot job has no issue-write or content-write permission,
+and file-write/shell tools are explicitly denied. It submits one structured plan
+covering every issue; incomplete or invalid plans fail a trusted validation gate.
+Strict threat detection must also succeed before the isolated write job runs.
+Only that job reconciles the four priority labels, publishes reasoning, and
+creates/links approved groups. It validates the plan again against the trusted
+snapshot and current GitHub state. Failure, missing-tool/data, incomplete-run,
+and detection tracking issues are disabled.
+
+Framework staged mode is also mutation-free. The custom apply job verifies the
+activation job's independent `info` artifact because gh-aw v0.89.21 does not
+forward its staged-mode environment variable to custom safe-output jobs.
+
+Review the Actions summary and `issue-triage-snapshot`,
+`issue-triage-decisions`, and `issue-triage-results` artifacts, retained for 14
+days. Preview summaries/results include proposed priorities, reasoning, groups,
+and missing managed label definitions, without any mutating API requests.
+
+If issues, prerequisites, or the default-branch revision changed during analysis,
+run a fresh manual triage rather than overwriting newer context. API failures
+fail the run and leave a progress artifact when application started. GitHub does
+not provide a transaction across comments, labels, parent creation, and links:
+completed operations are not rolled back. Reasoning is posted **before** label
+changes, so even partial transitions have an explanation. Retry failed jobs to
+resume with the original snapshot and transition markers, or run a fresh triage
+if context changed. The applier reuses its comments/parents and existing links
+instead of creating duplicates. A job retry refreshes its triage artifacts;
+download a failed attempt's progress first if you need to retain that copy.
+
+### Maintaining the workflow
+
+Edit the `.md` source, not the generated `.lock.yml`. This workflow was compiled
+with gh-aw **v0.89.21** and compiler-pinned engine/action/container versions.
+Use that compiler version when regenerating, or explicitly review an upgrade:
+
+```bash
+gh aw compile issue-priority-triage --strict --validate
+node --test .github/scripts/issue-priority-triage.test.cjs
+```
+
+Commit the source and regenerated lock together, along with compiler-required
+action-pin metadata. The focused tests use the built-in Node test runner and
+mocked GitHub APIs; they do not require AI inference or modify live issues.
 
 ## Reusable actions
 
