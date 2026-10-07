@@ -1,0 +1,49 @@
+{
+  "title": "Agentic Workshop",
+  "subtitle": "Build, break and evaluate agentic workflows — one step at a time.",
+  "contentRoot": "../",
+  "setup": {
+    "id": "pre-workflow-setup",
+    "name": "Pre-workflow",
+    "title": "Repository Setup",
+    "tagline": "Prepare your repository and verify the automation before starting either workshop.",
+    "accent": "teal",
+    "file": "README.md",
+    "section": {
+      "from": "Getting Started",
+      "until": "Exercises"
+    }
+  },
+  "tracks": [
+    {
+      "id": "copilot-customization-101",
+      "title": "GitHub Copilot Customization 101",
+      "tagline": "Learn Copilot by using it on real, small tasks in your own repo — not by watching a slideshow.",
+      "accent": "amber",
+      "intro": "exercises/GitHub Copilot Customization 101/README.md",
+      "exercises": [
+        { "id": "customization-01", "file": "exercises/GitHub Copilot Customization 101/01-build-a-skill.md" },
+        { "id": "customization-02", "file": "exercises/GitHub Copilot Customization 101/02-build-an-agent.md" },
+        { "id": "customization-03", "file": "exercises/GitHub Copilot Customization 101/03-bug-hunt.md" },
+        { "id": "customization-04", "file": "exercises/GitHub Copilot Customization 101/04-eval-arena.md" },
+        { "id": "customization-05", "file": "exercises/GitHub Copilot Customization 101/05-pitfalls-quiz.md" }
+      ]
+    },
+    {
+      "id": "agentic-workflows-evaluation",
+      "title": "Agentic Workflows & Evaluation",
+      "tagline": "Move from single customizations to workflows that plan, execute, evaluate and improve.",
+      "accent": "violet",
+      "intro": "exercises/Agentic Workflows & Evaluation/README.md",
+      "exercises": [
+        { "id": "agentic-01", "file": "exercises/Agentic Workflows & Evaluation/01_Creating_an_Agentic_Workflow.md", "image": "01_Creating_an_Agentic_Workflow" },
+        { "id": "agentic-02", "file": "exercises/Agentic Workflows & Evaluation/02_Improving_Agent_Evaluations.md", "image": "02_Improving_Agent_Evaluations" },
+        { "id": "agentic-03", "file": "exercises/Agentic Workflows & Evaluation/03_Improving_Skill_Evaluations.md", "image": "03_Improving_Skill_Evaluations" },
+        { "id": "agentic-04", "file": "exercises/Agentic Workflows & Evaluation/04_CICD_Checks.md", "image": "04_CICD_Checks" },
+        { "id": "agentic-05", "file": "exercises/Agentic Workflows & Evaluation/05_Creating_Orchestrations.md", "image": "05_Creating_Orchestrations" },
+        { "id": "agentic-06", "file": "exercises/Agentic Workflows & Evaluation/06_Tying_It_Together.md", "image": "06_Tying_It_Together" },
+        { "id": "agentic-07", "file": "exercises/Agentic Workflows & Evaluation/07_Further_Evaluation.md" }
+      ]
+    }
+  ]
+}
