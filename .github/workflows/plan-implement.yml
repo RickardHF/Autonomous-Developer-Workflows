@@ -24,7 +24,7 @@ jobs:
     outputs:
       issue_number: ${{ steps.issue.outputs.number }}
     steps:
-      - name: Resolve issue number and body
+      - name: Resolve issue number and discussion
         id: issue
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -34,7 +34,20 @@ jobs:
           set -euo pipefail
           mkdir -p out
           echo "number=$ISSUE_NUMBER" >> "$GITHUB_OUTPUT"
-          gh issue view "$ISSUE_NUMBER" --json title,body -q '"# " + .title + "\n\n" + .body' > out/issue.md
+          gh issue view "$ISSUE_NUMBER" --json title,body -q '"# " + .title + "\n\n" + (.body // "")' > out/issue.md
+          printf '\n\n## Issue comments\n\n' >> out/issue.md
+          gh api --paginate --slurp "repos/${GH_REPO}/issues/${ISSUE_NUMBER}/comments?per_page=100" |
+            jq -er '
+              add
+              | sort_by(.created_at, .id)
+              | if length == 0 then "_No comments._"
+                else .[] |
+                  "### Comment by \(if .user.login then "@" + .user.login else "[deleted user]" end)\n\n" +
+                  "Created: \(.created_at) | Updated: \(.updated_at)\n" +
+                  "Link: \(.html_url)\n\n" +
+                  (.body // "") + "\n"
+                end
+            ' >> out/issue.md
 
       - name: Upload issue artifact
         uses: actions/upload-artifact@v7
