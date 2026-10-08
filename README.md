@@ -109,3 +109,20 @@ See the [evaluator documentation](./docs/evaluator.md) for usage, arguments, eva
 
 The `src/` folder currently contains the description, functional requirements, and technical
 requirements for the workshop's example application.
+
+## McSquishy game scaffold
+
+The browser-only McSquishy game scaffold lives in [`game/`](./game/). From the repository root,
+run these commands inside that directory:
+
+```sh
+cd game
+npm install
+npm run dev
+npm run build
+npm run test
+npm run typecheck
+```
+
+The Vite development server serves a placeholder canvas. Vitest runs the smoke test in a
+Node environment, so the scaffold has no backend or browser automation dependency.
