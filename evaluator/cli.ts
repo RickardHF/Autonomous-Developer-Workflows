@@ -136,7 +136,7 @@ async function runEvaluationForFiles(agentFiles: string[], skillDirectories: str
             }
         }
 
-        const evaluation = evaluateSkillDefinition(skillContent, skillFileContents);
+        const evaluation = evaluateSkillDefinition(skillContent, skillFileContents, skillDirectory);
 
         evaluationRuns.push((async () => {
             const e = await evaluation;

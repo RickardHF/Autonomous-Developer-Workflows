@@ -17,7 +17,8 @@
     "typecheck": "tsc --noEmit",
     "build": "tsc",
     "postbuild": "chmod +x dist/cli.js",
-    "test": "node --import tsx --test --experimental-test-module-mocks cli.test.ts evaluate.test.ts regression.test.ts",
+    "test": "node --import tsx --test --experimental-test-module-mocks cli.test.ts evaluate-definition.test.ts evaluate.test.ts regression.test.ts",
+    "test:definitions": "node --import tsx --test --experimental-test-module-mocks evaluate-definition.test.ts",
     "test:regression": "node --import tsx --test --experimental-test-module-mocks regression.test.ts"
   },
   "devDependencies": {
@@ -29,6 +30,7 @@
     "@github/copilot-sdk": "^1.0.11",
     "commander": "^12.1.0",
     "glob": "^13.0.6",
+    "yaml": "^2.9.1",
     "zod": "^4.4.3"
   }
 }

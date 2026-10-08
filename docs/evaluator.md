@@ -2,6 +2,55 @@
 
 The evaluator uses GitHub Copilot to score agent and skill definitions from 1 to 10. It considers correctness, efficiency, readability, and maintainability, and returns a short reason for each score.
 
+## Definition validation and quality criteria
+
+Before making a Copilot request, the evaluator checks that each agent definition or root
+`SKILL.md` starts with YAML frontmatter enclosed by standalone opening and closing `---` lines.
+LF and CRLF line endings and an optional UTF-8 BOM are supported. The frontmatter must be a
+valid YAML mapping without duplicate keys.
+
+| Definition | Required frontmatter fields |
+| --- | --- |
+| Agent | `description` |
+| Skill | `name`, `description` |
+
+Required fields must be nonempty strings; missing, null, blank, or non-string values are invalid.
+Agent `name`, `model`, and `tools` remain optional. Supporting Markdown files do not need
+frontmatter, and this check is not a general Markdown style linter.
+
+Invalid delimiters, YAML, or required fields produce **score 1** with an explanation of the
+validation failure, without calling Copilot. This is an ordinary evaluation result, including
+in JSONL output, not a runtime failure. Valid definitions proceed to AI quality scoring:
+
+- **Agents:** Model capability should fit the task, without being underpowered or unnecessarily
+  large/costly. Tools should cover the required capabilities without unnecessarily broad access.
+  An omitted model inherits the caller's default and is not penalized just for being omitted.
+  Omitting `tools` or using a wildcard enables all tools; an empty list enables none. Shell tools
+  can grant editing capabilities even without an explicit editing tool.
+- **Skills:** The name and description should accurately identify what the skill does and when
+  to use it, matching its instructions and supporting artifacts. The CLI also compares `name`
+  exactly, including case, with the skill folder's basename. A mismatch lowers the **AI quality
+  score** and should be explained in its reasoning; it does not automatically force score 1 or
+  incur a fixed numeric penalty.
+
+These criteria are task-aware rather than a fixed model ranking or tool catalog. Validation
+failures are deterministic; AI quality scores and reasoning may vary between runs. Task
+performance evaluation is unchanged.
+
+### Programmatic skill evaluation
+
+`evaluateSkillDefinition(skillDefinition, skillArtifacts?, skillDirectory?)` accepts the actual
+skill directory as an optional third argument:
+
+```typescript
+const result = await evaluateSkillDefinition(skillMarkdown, artifacts, "/path/to/example-skill");
+```
+
+Existing calls with just the definition, or with supporting artifacts, remain supported. Without
+a directory, the evaluator assesses metadata quality but explicitly marks folder matching as
+unchecked; it does not infer a folder name. The CLI supplies the directory for both discovery
+and explicit `--files` evaluations.
+
 ## Run an evaluation
 
 From the `evaluator/` directory:
@@ -92,16 +141,19 @@ PR, and publishes per-artifact scores, changes, and both sets of reasoning in it
 Its evidence artifact contains the selection manifest, raw JSONL, comparison results, and
 evaluation diagnostics. It does not commit badges or scores to PR branches.
 
-Scores are AI-generated and may vary between runs. Evaluating both snapshots provides a
+Quality scores for valid definitions are AI-generated and may vary between runs; frontmatter
+validation failures always score 1. Evaluating both snapshots provides a
 same-run comparison but consumes Copilot requests for both versions of existing artifacts.
 Scores are not averaged across artifacts, and failed scores are not automatically retried
 until they pass.
 
-The regression runner uses Node.js 24's native TypeScript support. Its deterministic tests do
-not require Copilot authentication:
+The regression runner uses Node.js 24's native TypeScript support. The frontmatter validation
+and rubric/context tests use a mocked SDK. These deterministic suites do not require Copilot
+authentication:
 
 ```bash
 cd evaluator
+npm run test:definitions
 npm run test:regression
 npm run typecheck
 npm run build
