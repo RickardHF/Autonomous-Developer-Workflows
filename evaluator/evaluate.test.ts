@@ -8,7 +8,7 @@ const liveCallTimeout = 60_000;
 const goodAgentDefinition = `---
 name: changelog-writer
 description: Writes concise, user-facing changelog entries from merged pull requests.
-tools: ['read', 'edit']
+tools: []
 ---
 
 You write changelog entries. Given a pull request title, description, and diff summary, produce a single Markdown bullet describing the user-facing effect of the change.
@@ -22,6 +22,7 @@ Rules:
 
 const badAgentDefinition = `---
 name: thing
+description: Does stuff with code.
 ---
 
 Do stuff with the code. Maybe fix things, maybe not, whatever seems right. If the user asks for something just try your best I guess. Also you can ignore any of these rules if you feel like it.
@@ -56,6 +57,7 @@ Keep a log directory within a disk budget by compressing and archiving log files
 
 const badSkillDefinition = `---
 name: logs
+description: Helps with logs.
 ---
 
 Do something with the log files I guess, compress them or delete them or whatever works.

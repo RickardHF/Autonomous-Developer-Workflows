@@ -367,7 +367,7 @@ test("CLI discovery reports deletions and no-op output without invoking Copilot"
 
 test("the evaluator includes hidden skill supporting files (mocked SDK, no live calls)", (t) => {
     const directory = temporaryDirectory(t);
-    write(directory, "SKILL.md", "# Fixture skill\n");
+    write(directory, "SKILL.md", `---\nname: ${path.basename(directory)}\ndescription: Includes supporting context.\n---\n# Fixture skill\n`);
     write(directory, ".hidden/context.txt", "HIDDEN_SUPPORT_MARKER");
     const cliPath = path.join(evaluatorDirectory, "cli.ts");
     const script = `

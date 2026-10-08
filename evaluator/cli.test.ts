@@ -16,6 +16,88 @@ function runCli(args: string[]) {
     });
 }
 
+function runMockedCli(args: string[]) {
+    const script = `
+import { mock } from "node:test";
+mock.module("@github/copilot-sdk", { namedExports: {
+    defineTool: (name, options) => ({ name, ...options }),
+    CopilotClient: class {
+        async start() {}
+        async stop() {}
+        async createSession() {
+            return { sendAndWait: async (prompt) => {
+                const check = prompt.match(/<skill-folder-check>\\s*([\\s\\S]*?)\\s*<\\/skill-folder-check>/);
+                if (!check?.[1]) throw new Error("Missing skill folder context.");
+                return { data: { toolRequests: [{
+                    name: "evaluate", arguments: { score: 6, reasoning: check[1].trim() }
+                }] } };
+            } };
+        }
+    }
+} });
+process.argv = ${JSON.stringify([process.execPath, ...args])};
+await import(${JSON.stringify(cliPath)});
+`;
+    return spawnSync(process.execPath, ["--import", "tsx", "--experimental-test-module-mocks",
+        "--input-type=module", "--eval", script], {
+        cwd: evaluatorDirectory,
+        encoding: "utf-8",
+    });
+}
+
+for (const mode of ["explicit", "automatic"] as const) {
+    test(`${mode} evaluation emits score-1 JSONL results for invalid frontmatter`, () => {
+        const fixtureDirectory = fs.mkdtempSync(path.join(os.tmpdir(), "agent-eval-frontmatter-"));
+        const agentFile = path.join(fixtureDirectory, ".github", "agents", "example.agent.md");
+        const skillDirectory = path.join(fixtureDirectory, ".agents", "skills", "example");
+        fs.mkdirSync(path.dirname(agentFile), { recursive: true });
+        fs.mkdirSync(skillDirectory, { recursive: true });
+        fs.writeFileSync(agentFile, "# No frontmatter\n");
+        fs.writeFileSync(path.join(skillDirectory, "SKILL.md"), "---\nname: example\n---\nInstructions\n");
+
+        try {
+            const args = mode === "explicit" ? ["--files", agentFile, skillDirectory] : ["--directory", fixtureDirectory];
+            const result = runCli(["evaluate", ...args, "--json"]);
+            assert.equal(result.status, 0, result.stderr);
+            assert.equal(result.stderr, "");
+            const results = result.stdout.trim().split("\n").map((line) => JSON.parse(line));
+            assert.equal(results.length, 2);
+            for (const entry of results) {
+                assert.equal(entry.score, 1);
+                assert.match(entry.reasoning, /Invalid frontmatter/);
+            }
+            const relativeTo = mode === "explicit" ? evaluatorDirectory : fixtureDirectory;
+            assert.deepEqual(results.map((entry) => entry.fileName).sort(), [
+                path.relative(relativeTo, agentFile),
+                path.relative(relativeTo, path.join(skillDirectory, "SKILL.md")),
+            ].sort());
+        } finally {
+            fs.rmSync(fixtureDirectory, { recursive: true, force: true });
+        }
+    });
+
+    test(`${mode} evaluation passes the actual skill folder and preserves AI-scored mismatches`, () => {
+        const fixtureDirectory = fs.mkdtempSync(path.join(os.tmpdir(), "agent-eval-folder-"));
+        const skillDirectory = path.join(fixtureDirectory, ".agents", "skills", "actual-folder");
+        fs.mkdirSync(skillDirectory, { recursive: true });
+        fs.writeFileSync(path.join(skillDirectory, "SKILL.md"),
+            "---\nname: different-name\ndescription: Performs a specific task.\n---\nInstructions\n");
+
+        try {
+            const args = mode === "explicit" ? ["--files", skillDirectory] : ["--directory", fixtureDirectory];
+            const result = runMockedCli(["evaluate", ...args, "--json"]);
+            assert.equal(result.status, 0, result.stderr);
+            const entry = JSON.parse(result.stdout.trim());
+            assert.equal(entry.score, 6);
+            assert.deepEqual(JSON.parse(entry.reasoning), {
+                checked: true, folderName: "actual-folder", name: "different-name", nameMatchesFolder: false,
+            });
+        } finally {
+            fs.rmSync(fixtureDirectory, { recursive: true, force: true });
+        }
+    });
+}
+
 test("JSON mode reserves stdout for evaluation results", () => {
     const fixtureDirectory = fs.mkdtempSync(path.join(os.tmpdir(), "agent-eval-json-"));
     fs.mkdirSync(path.join(fixtureDirectory, ".agents", "skills", "missing"), { recursive: true });
