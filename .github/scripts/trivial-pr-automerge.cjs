@@ -274,11 +274,10 @@ async function mergeIfReady({
       if (finalStale) return { merged: false, reason: finalStale };
       if (!finalChecks.pending && finalState.gate.mergeable === "MERGEABLE" &&
           ["CLEAN", "UNSTABLE", "HAS_HOOKS"].includes(finalState.gate.mergeStateStatus)) {
-        const { data } = await github.request("PUT /repos/{owner}/{repo}/pulls/{pull_number}/merge", {
-          ...parameters(repository), pull_number: snapshot.pr_number, sha: snapshot.head_sha, merge_method: "squash",
-        });
-        if (data.merged !== true || !SHA.test(data.sha)) throw new Error(`GitHub did not confirm merge success: ${data.message}`);
-        return { merged: true, merge_sha: data.sha, reason: "Squash merge confirmed by GitHub" };
+        return {
+          merged: false,
+          reason: "GitHub's merge API cannot atomically pin the base SHA; a server-enforced merge precondition is required",
+        };
       }
     }
     await onProgress(`Attempt ${attempt + 1}/${attempts}: ${checks.reason}`);

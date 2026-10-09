@@ -15,7 +15,7 @@ protection depend on repository branch rules outside these workflows.
 | [Plan Gate](../.github/workflows/plan-gate.yml)               | `pull_request` to `main`                                               | Checks the required plan text on PRs authored by `github-actions[bot]`; it is skipped for other authors. |
 | [Evaluate Agents & Skills](../.github/workflows/evaluate.yml) | `push` to `main` or `workflow_dispatch` | Scores agent/skill definitions and publishes a badge. |
 | [AI Issue Priority Triage](../.github/workflows/issue-priority-triage.md) | `workflow_dispatch` only | Prioritizes every open issue and groups cohesive work using native sub-issues. |
-| [Merge Approved Trivial PRs](../.github/workflows/trivial-pr-automerge.yml) | `pull_request_review` | Uses Copilot to assess approved changes, squash merges trivial PRs under repository rules, cleans up their branches, and dispatches evaluation. |
+| [Merge Approved Trivial PRs](../.github/workflows/trivial-pr-automerge.yml) | `pull_request_review` | Uses Copilot to assess approved changes; leaves the PR open because the merge API cannot atomically enforce the analyzed base revision. |
 
 ## Review-triggered trivial PR automerge
 
@@ -79,18 +79,20 @@ merging. If the bounded wait expires, the PR remains open; another submitted
 approval starts a fresh attempt. Attempts are serialized per PR rather than
 cancelling an in-progress merge.
 
-Immediately before merging, the job rechecks requirements and live revisions.
-It requests a **squash merge with the expected head SHA**. GitHub's repository
-rules remain authoritative: no admin bypass, forced update, or auto-merge queue
-is used. Do not make this workflow itself a required check, which could make
-it wait for its own completion.
+Immediately before a possible merge, the job rechecks requirements and live
+revisions. The REST merge API can pin the expected head SHA but cannot
+atomically pin the analyzed base SHA. Because this workflow cannot enforce a
+server-side base precondition, it leaves every PR open rather than risk merging
+onto an unanalyzed base. Automated merging can resume only after it uses an
+atomic server-side precondition such as a merge queue. Do not make this workflow
+itself a required check, which could make it wait for its own completion.
 
-Only after GitHub confirms the merge does cleanup consider deleting the source
-branch. It verifies the merge result, refuses default/protected branches and
-branches used by another open PR, and rechecks that the branch still points to
-the analyzed head. An advanced branch is kept and the reason is reported.
-GitHub's branch-deletion API has no atomic expected-SHA condition: the final
-check reduces, but cannot eliminate, a race with a concurrent push.
+If an atomic merge mechanism is added, cleanup must run only after GitHub
+confirms the merge. It verifies the merge result, refuses default/protected
+branches and branches used by another open PR, and rechecks that the branch
+still points to the analyzed head. An advanced branch is kept and the reason is
+reported. GitHub's branch-deletion API has no atomic expected-SHA condition:
+the final check reduces, but cannot eliminate, a race with a concurrent push.
 
 ### Authentication, evaluation, and recovery
 

@@ -110,8 +110,8 @@ for authentication, operation, and recovery details.
 Submitted approvals also activate **Merge Approved Trivial PRs** for
 same-repository PRs targeting `main`. Copilot assesses whether the changes are
 small and low-risk, including functional fixes. Nontrivial changes stay untouched;
-trivial changes are squash merged only after required checks and merge rules
-pass, then the source branch is safely cleaned up and evaluation is dispatched.
+the workflow leaves all PRs open because GitHub's merge API cannot atomically pin
+the analyzed base SHA. It will not risk merging onto an unanalyzed base.
 See [review-triggered automerge](./docs/agent-orchestration.md#review-triggered-trivial-pr-automerge)
 for policy, guardrails, and failure handling.
 

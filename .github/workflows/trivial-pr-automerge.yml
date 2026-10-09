@@ -80,7 +80,7 @@ jobs:
             );
             fs.writeFileSync("out/trivial-pr-automerge/decision.json", JSON.stringify(decision, null, 2));
             core.setOutput("trivial", String(decision.trivial));
-            await core.summary.addHeading(decision.trivial ? "Trivial: eligible for guarded merging" : "Nontrivial: no PR changes")
+            await core.summary.addHeading(decision.trivial ? "Trivial: eligible for merge readiness checks" : "Nontrivial: no PR changes")
               .addCodeBlock(JSON.stringify(decision, null, 2), "json").write();
 
       - name: Report incomplete classification
@@ -98,7 +98,7 @@ jobs:
           retention-days: 14
 
   merge:
-    name: Guarded squash merge and cleanup
+    name: Guarded merge readiness
     needs: classify
     if: needs.classify.result == 'success' && needs.classify.outputs.trivial == 'true'
     runs-on: ubuntu-latest
@@ -121,7 +121,7 @@ jobs:
           name: trivial-pr-analysis-${{ github.run_id }}
           path: out/trivial-pr-automerge
 
-      - name: Wait for required checks and squash merge exact head
+      - name: Check merge readiness and atomic base precondition
         id: merge
         uses: actions/github-script@v9
         env:

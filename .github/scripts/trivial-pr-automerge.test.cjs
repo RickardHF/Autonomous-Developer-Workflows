@@ -331,7 +331,7 @@ test("nontrivial, uncertain, invalid, or stale decisions never mutate GitHub", a
   }
 });
 
-test("pending checks can pass, and squash merging is pinned to the analyzed head", async () => {
+test("pending checks are polled before the merge is refused without an atomic base precondition", async () => {
   const f = fixture();
   let reads = 0;
   let pauses = 0;
@@ -339,15 +339,31 @@ test("pending checks can pass, and squash merging is pinned to the analyzed head
     readChecks: () => ({ pending: reads++ === 0, failed: false, reason: "Required gate pending" }),
     pause: async () => { pauses++; },
   });
-  assert.equal(result.merged, true);
-  assert.equal(result.merge_sha, MERGE);
+  assert.equal(result.merged, false);
+  assert.match(result.reason, /cannot atomically pin the base SHA/);
   assert.equal(pauses, 1);
   assert.equal(reads, 3);
-  assert.deepEqual(f.github.writes().map(({ parameters }) => parameters), [
-    { owner: "example", repo: "project", pull_number: 7, sha: HEAD, merge_method: "squash" },
-  ]);
+  assert.deepEqual(f.github.writes(), []);
   assert.equal((await f.merge()).merged, false);
-  assert.equal(f.github.writes().length, 1);
+  assert.deepEqual(f.github.writes(), []);
+});
+
+test("a base advance after the final state read cannot authorize a merge", async () => {
+  const f = fixture();
+  const graphql = f.github.graphql.bind(f.github);
+  let reads = 0;
+  f.github.graphql = async (...args) => {
+    const result = await graphql(...args);
+    if (++reads === 2) {
+      f.github.pr.base.sha = HEAD;
+      f.github.gate.baseRefOid = HEAD;
+    }
+    return result;
+  };
+  const result = await f.merge();
+  assert.equal(result.merged, false);
+  assert.equal(f.github.pr.base.sha, HEAD);
+  assert.deepEqual(f.github.writes(), []);
 });
 
 test("failed checks, bounded waits, and blocked or unknown merge requirements cannot merge", async () => {
@@ -394,13 +410,14 @@ test("state and checks are rechecked immediately before mutation", async () => {
   assert.deepEqual(f.github.writes(), []);
 });
 
-test("GitHub API errors and merge refusals remain explicit failures", async () => {
+test("merge is refused when no atomic base precondition is available", async () => {
   const f = fixture();
   f.github.beforeRequest = (route) => {
-    if (route.startsWith("PUT")) throw Object.assign(new Error("Branch rules refused merge"), { status: 405 });
+    if (route.startsWith("PUT")) throw new Error("Merge must not be attempted");
   };
-  await assert.rejects(f.merge(), /Branch rules refused merge/);
+  assert.match((await f.merge()).reason, /cannot atomically pin the base SHA/);
   assert.equal(f.github.pr.merged, undefined);
+  assert.deepEqual(f.github.writes(), []);
   await assert.rejects(deleteSourceBranch(f.postMerge()), /does not confirm/);
   await assert.rejects(dispatchEvaluation(f.postMerge()), /does not confirm/);
   assert.ok(!f.github.calls.some(({ route }) => /^(DELETE|POST) /.test(route)));
@@ -410,14 +427,9 @@ test("GitHub API errors and merge refusals remain explicit failures", async () =
   assert.deepEqual(inaccessible.github.writes(), []);
 });
 
-test("a success-status API response without affirmative merge confirmation cannot authorize cleanup or dispatch", async () => {
+test("a merge refusal cannot authorize cleanup or dispatch", async () => {
   const f = fixture();
-  const request = f.github.request.bind(f.github);
-  f.github.request = (route, parameters) => {
-    if (route.startsWith("PUT")) return { data: { merged: false, message: "Required conditions not satisfied" } };
-    return request(route, parameters);
-  };
-  await assert.rejects(f.merge(), /did not confirm merge success.*Required conditions/);
+  assert.equal((await f.merge()).merged, false);
   await assert.rejects(deleteSourceBranch(f.postMerge()), /does not confirm/);
   await assert.rejects(dispatchEvaluation(f.postMerge()), /does not confirm/);
   assert.deepEqual(f.github.writes(), []);
@@ -425,7 +437,7 @@ test("a success-status API response without affirmative merge confirmation canno
 
 test("branch deletion and evaluation dispatch require confirmed merge identity", async () => {
   const f = fixture();
-  await f.merge();
+  Object.assign(f.github.pr, { merged: true, state: "closed", merge_commit_sha: MERGE });
   assert.equal((await deleteSourceBranch(f.postMerge())).deleted, true);
   assert.deepEqual(f.github.writes().at(-1), {
     route: "DELETE /repos/{owner}/{repo}/git/refs/{ref}",
@@ -446,7 +458,7 @@ test("advanced, protected, shared, and default source branches are retained", as
     (g) => { g.shared = [{ number: 9 }]; }, (g) => { g.defaultBranch = "feature/fix"; },
   ]) {
     const f = fixture();
-    await f.merge();
+    Object.assign(f.github.pr, { merged: true, state: "closed", merge_commit_sha: MERGE });
     mutate(f.github);
     assert.equal((await deleteSourceBranch(f.postMerge())).deleted, false);
     assert.ok(!f.github.writes().some(({ route }) => route.startsWith("DELETE")));
@@ -456,7 +468,7 @@ test("advanced, protected, shared, and default source branches are retained", as
 
 test("concurrent branch deletion is reported but unexpected cleanup and dispatch errors fail explicitly", async () => {
   const f = fixture();
-  await f.merge();
+  Object.assign(f.github.pr, { merged: true, state: "closed", merge_commit_sha: MERGE });
   f.github.beforeRequest = (route) => {
     if (route.includes("/git/ref/")) throw Object.assign(new Error("Already deleted"), { status: 404 });
   };
@@ -487,7 +499,9 @@ test("workflow permissions, review gating, trusted checkouts, and non-cancelling
   assert.equal(workflow.concurrency["cancel-in-progress"], false);
   assert.match(workflow.concurrency.group, /pull_request.number/);
   assert.deepEqual(workflow.jobs.classify.permissions, { contents: "read", "pull-requests": "read", "copilot-requests": "write" });
-  assert.deepEqual(workflow.jobs.merge.permissions, { contents: "write", "pull-requests": "write", checks: "read", actions: "write" });
+  assert.deepEqual(workflow.jobs.merge.permissions, {
+    contents: "write", "pull-requests": "write", checks: "read", actions: "write",
+  });
   assert.match(workflow.jobs.classify.if, /event.action == 'submitted'/);
   assert.match(workflow.jobs.classify.if, /review.state == 'approved'/);
   assert.match(workflow.jobs.classify.if, /base.ref == 'main'/);
@@ -515,7 +529,7 @@ test("workflow permissions, review gating, trusted checkouts, and non-cancelling
   }
 });
 
-test("actual post-merge workflow scripts still dispatch evaluation when branch cleanup fails", async (context) => {
+test("workflow leaves the PR open and does not run post-merge operations", async (context) => {
   const f = fixture();
   const directory = mkdtempSync(join(tmpdir(), "trivial-pr-workflow-"));
   context.after(() => rmSync(directory, { recursive: true, force: true }));
@@ -549,14 +563,9 @@ test("actual post-merge workflow scripts still dispatch evaluation when branch c
     );
   };
   await run("merge");
-  assert.equal(outputs.merged, "true");
-  assert.equal(outputs.merge_sha, MERGE);
-  f.github.beforeRequest = (route) => {
-    if (route.startsWith("DELETE")) throw new Error("Branch cleanup API unavailable");
-  };
-  await assert.rejects(run("cleanup"), /Branch cleanup API unavailable/);
-  await run("evaluation");
-  assert.equal(JSON.parse(readFileSync(join(directory, "out/trivial-pr-results/merge.json"), "utf8")).merged, true);
-  assert.equal(JSON.parse(readFileSync(join(directory, "out/trivial-pr-results/evaluation.json"), "utf8")).dispatched, true);
-  assert.ok(f.github.writes().some(({ route }) => route.includes("/dispatches")));
+  assert.equal(outputs.merged, "false");
+  assert.equal(outputs.merge_sha, undefined);
+  assert.equal(JSON.parse(readFileSync(join(directory, "out/trivial-pr-results/merge.json"), "utf8")).merged, false);
+  assert.equal(f.github.pr.merged, undefined);
+  assert.deepEqual(f.github.writes(), []);
 });
