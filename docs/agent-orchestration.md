@@ -24,6 +24,9 @@ workflow reacts to submitted, edited, and dismissed PR reviews. Only a
 **submitted approval** starts an assessment. The PR must be open, non-draft,
 originate in this repository, and target `main`. Fork PRs and other target
 branches are excluded; non-approving reviews do not start analysis.
+The triggering approval must still cover the current head, but aggregate
+required-review rules do not gate classification. This assessment does not
+establish merge readiness.
 
 Copilot reviews the actual changes, not just the PR title or description, and
 publishes its decision in the Actions summary and `trivial-pr-analysis-<run_id>`
@@ -79,7 +82,7 @@ Focused tests use real temporary Git fixtures plus mocked Copilot/GitHub calls
 and do not merge or delete live PRs:
 
 ```bash
-node --test .github/scripts/trivial-pr-automerge.test.cjs
+npm --prefix evaluator run test:workflows
 ```
 
 ## Manual AI issue priority triage

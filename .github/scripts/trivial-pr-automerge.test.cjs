@@ -47,7 +47,8 @@ function fakeGithub() {
     },
     async graphql(query, parameters) {
       this.calls.push({ route: "GRAPHQL", parameters: clone(parameters) });
-      assert.match(query, /headRefOid baseRefOid reviewDecision/);
+      assert.match(query, /headRefOid baseRefOid/);
+      assert.doesNotMatch(query, /reviewDecision/);
       return { repository: { pullRequest: clone(this.gate) } };
     },
   };
@@ -212,6 +213,32 @@ test("review limits are inclusive and exceeding any limit prevents classificatio
   assert.equal(atLimit.complete, true);
   contents[0] += "x";
   assert.match(addedFiles(contents)().reason, /total review context limit/);
+});
+
+test("valid triggering approvals can be classified without aggregate merge approval", async (context) => {
+  const f = gitFixture(context);
+  f.write("src/fix.js", "const enabled = true;\n");
+  const head = f.commit();
+  f.git("update-ref", "refs/pull/7/head", head);
+  f.git("checkout", "--quiet", "--detach", f.base);
+  f.git("remote", "add", "origin", f.directory);
+  const input = fixture().input;
+  input.event.pull_request.base.sha = f.base;
+  input.event.pull_request.head.sha = head;
+  input.event.review.commit_id = head;
+  input.github.pr = clone(input.event.pull_request);
+  input.github.review.commit_id = head;
+  input.github.gate.baseRefOid = f.base;
+  input.github.gate.headRefOid = head;
+  for (const decision of [null, "REVIEW_REQUIRED", "CHANGES_REQUESTED"]) {
+    input.github.gate.reviewDecision = decision;
+    const result = await collectSnapshot({ ...input, cwd: f.directory });
+    assert.equal(result.eligible, true);
+    assert.equal(result.complete, true);
+    assert.deepEqual(input.github.writes(), []);
+  }
+  input.github.review.state = "DISMISSED";
+  assert.match((await collectSnapshot({ ...input, cwd: f.directory })).reason, /approval is no longer valid/);
 });
 
 test("automation changes, binary contents, and symlinks do not reach Copilot classification", (context) => {

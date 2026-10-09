@@ -192,7 +192,7 @@ After installing the evaluator dependencies, run the evaluation workflow tests
 from the repository root:
 
 ```bash
-node --test .github/scripts/evaluation-workflow.test.cjs
+npm --prefix evaluator run test:workflows
 ```
 
 These tests execute workflow scripts with mocked evaluation and disposable local

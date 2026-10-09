@@ -37,13 +37,13 @@ async function readState(github, repository, number, reviewId) {
     github.graphql(`query($owner: String!, $repo: String!, $number: Int!) {
       repository(owner: $owner, name: $repo) {
         pullRequest(number: $number) {
-          headRefOid baseRefOid reviewDecision
+          headRefOid baseRefOid
         }
       }
     }`, { ...parameters(repository), number }),
   ]);
   const gate = graph.repository?.pullRequest;
-  if (!gate) throw new Error("GitHub did not return PR review requirements");
+  if (!gate) throw new Error("GitHub did not return PR revisions");
   return { pr: pr.data, review: review.data, gate };
 }
 
@@ -60,7 +60,6 @@ function staleReason({ pr, review, gate }, snapshot) {
   if (review.id !== snapshot.review_id || review.state !== "APPROVED" || review.commit_id !== snapshot.head_sha) {
     return "Triggering approval is no longer valid for this head";
   }
-  if (gate.reviewDecision !== "APPROVED") return "Current repository approval requirements are not satisfied";
   return null;
 }
 
