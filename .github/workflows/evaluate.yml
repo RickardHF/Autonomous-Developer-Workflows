@@ -6,14 +6,14 @@ on:
   workflow_dispatch:
 
 concurrency:
-  group: evaluation-publishing-${{ github.ref }}
+  group: evaluation-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
   evaluate:
     runs-on: ubuntu-latest
     permissions:
-      contents: write
+      contents: read
       copilot-requests: write
 
     steps:
@@ -170,11 +170,12 @@ jobs:
         working-directory: evaluator
         env:
           BADGE_PATH: ${{ runner.temp }}/evaluation-output/eval-badge.svg
+          SOURCE_SHA: ${{ github.sha }}
         run: |
           npx tsx cli.ts badge \
             --input eval_results.jsonl \
             --output "$BADGE_PATH" \
-            --date "$(date -u +%Y-%m-%d)"
+            --date "$(date -u +%Y-%m-%d) ${SOURCE_SHA:0:12}"
 
       - name: Upload badge artifact
         id: upload_badge
@@ -185,84 +186,15 @@ jobs:
           path: ${{ runner.temp }}/evaluation-output/eval-badge.svg
           if-no-files-found: error
 
-      - name: Publish evaluation badge
-        id: publish_badge
-        if: success() && github.ref == 'refs/heads/main'
-        env:
-          GH_TOKEN: ${{ github.token }}
-          SOURCE_SHA: ${{ github.sha }}
-          SOURCE_REF: ${{ github.ref }}
-          BADGE_PATH: ${{ runner.temp }}/evaluation-output/eval-badge.svg
-        run: |
-          set -euo pipefail
-          if [ "$SOURCE_REF" != "refs/heads/main" ]; then
-            echo "Only main evaluations are published."
-            exit 0
-          fi
-          if [ ! -s "$BADGE_PATH" ]; then
-            echo "::error::No generated badge to publish."
-            exit 1
-          fi
-
-          origin=$(git remote get-url origin)
-          publication_dir=$(mktemp -d "$RUNNER_TEMP/evaluation-publish.XXXXXX")
-          trap 'rm -rf "$publication_dir"' EXIT
-          git init --quiet --initial-branch=evaluation-results "$publication_dir"
-          cd "$publication_dir"
-          git remote add origin "$origin"
-          git config credential.helper ""
-          git config --add credential.helper '!gh auth git-credential'
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-
-          published_ref=$(git ls-remote origin refs/heads/evaluation-results)
-          if [ -n "$published_ref" ]; then
-            git fetch --quiet --depth=1 origin refs/heads/evaluation-results
-            git checkout --quiet -B evaluation-results FETCH_HEAD
-          fi
-
-          current_main_sha() {
-            local sha
-            sha=$(git ls-remote origin refs/heads/main | cut -f1) || return 1
-            if [ -z "$sha" ]; then
-              echo "::error::Remote main branch not found." >&2
-              return 1
-            fi
-            printf '%s' "$sha"
-          }
-
-          cp "$BADGE_PATH" eval-badge.svg
-          git add -- eval-badge.svg
-          main_sha=$(current_main_sha)
-          if [ "$main_sha" != "$SOURCE_SHA" ]; then
-            echo "Main has advanced; this evaluation will not be published."
-            exit 0
-          fi
-          if git diff --cached --quiet; then
-            echo "No changes to badge."
-          else
-            git commit --quiet -m "chore: update evaluation badge for ${SOURCE_SHA}"
-            main_sha=$(current_main_sha)
-            if [ "$main_sha" != "$SOURCE_SHA" ]; then
-              echo "Main has advanced; this evaluation will not be published."
-              exit 0
-            fi
-            git push origin HEAD:refs/heads/evaluation-results
-          fi
-          echo "published=true" >> "$GITHUB_OUTPUT"
-
       - name: Badge summary
         if: always()
         env:
-          PUBLISHED: ${{ steps.publish_badge.outputs.published }}
           UPLOAD_OUTCOME: ${{ steps.upload_badge.outcome }}
-          BADGE_URL: https://raw.githubusercontent.com/${{ github.repository }}/evaluation-results/eval-badge.svg
+          SOURCE_SHA: ${{ github.sha }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |
-          if [ "$PUBLISHED" = "true" ]; then
-            echo "![Evaluation Badge](${BADGE_URL})" >> "$GITHUB_STEP_SUMMARY"
-          elif [ "$UPLOAD_OUTCOME" = "success" ]; then
-            echo "The SVG is available in this run's [eval-badge artifact](${RUN_URL}#artifacts). The published badge was not updated." >> "$GITHUB_STEP_SUMMARY"
+          if [ "$UPLOAD_OUTCOME" = "success" ]; then
+            echo "The SVG for evaluated commit \`${SOURCE_SHA}\` is available in this run's [eval-badge artifact](${RUN_URL}#artifacts). This is a snapshot, not a current-main badge." >> "$GITHUB_STEP_SUMMARY"
           else
-            echo "No badge was published. The previous published badge remains unchanged." >> "$GITHUB_STEP_SUMMARY"
+            echo "No badge artifact was uploaded." >> "$GITHUB_STEP_SUMMARY"
           fi

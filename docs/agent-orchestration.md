@@ -13,7 +13,7 @@ protection depend on repository branch rules outside these workflows.
 | ------------------------------------------------------------- | ---------------------------------------------------------------------- | ----------------------------------------------------------------- |
 | [Plan and Implement](../.github/workflows/plan-implement.yml) | `issues.labeled` (`copilot:plan-and-implement`) or `workflow_dispatch` | Plans, risk-scores, and implements the change on an agent branch. |
 | [Plan Gate](../.github/workflows/plan-gate.yml)               | `pull_request` to `main`                                               | Checks the required plan text on PRs authored by `github-actions[bot]`; it is skipped for other authors. |
-| [Evaluate Agents & Skills](../.github/workflows/evaluate.yml) | `push` to `main` or `workflow_dispatch` | Scores agent/skill definitions and publishes a badge. |
+| [Evaluate Agents & Skills](../.github/workflows/evaluate.yml) | `push` to `main` or `workflow_dispatch` | Scores agent/skill definitions and uploads a commit-labeled badge artifact. |
 | [AI Issue Priority Triage](../.github/workflows/issue-priority-triage.md) | `workflow_dispatch` only | Prioritizes every open issue and groups cohesive work using native sub-issues. |
 | [Classify Approved Trivial PRs](../.github/workflows/trivial-pr-automerge.yml) | `pull_request_review` | Uses Copilot to assess approved changes and publishes its decision; it never merges or modifies a PR. |
 

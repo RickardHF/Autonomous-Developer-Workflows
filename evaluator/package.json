@@ -23,7 +23,8 @@
   "devDependencies": {
     "@types/node": "^22.0.0",
     "tsx": "^4.23.12",
-    "typescript": "^7.0.2"
+    "typescript": "^7.0.2",
+    "yaml": "2.9.1"
   },
   "dependencies": {
     "@github/copilot-sdk": "^1.0.11",

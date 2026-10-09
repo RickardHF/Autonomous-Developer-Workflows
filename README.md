@@ -23,16 +23,13 @@ Participants learn how to move from individual customizations to reliable agenti
 
 ## Evaluation Status
 
-![Evaluation Results](https://raw.githubusercontent.com/RickardHF/Autonomous-Developer-Workflows/evaluation-results/eval-badge.svg)
-
 > The [Evaluate Agents & Skills](./.github/workflows/evaluate.yml) workflow runs on every
-> push to `main`, cancels superseded runs, and publishes successful results to the
-> `evaluation-results` branch without pushing to protected `main`.
-> Failed or canceled runs leave the previous badge unchanged. The image becomes
-> available after the first successful publication.
+> push to `main`, cancels superseded runs, and uploads successful results as a
+> run-specific `eval-badge` artifact labeled with the evaluated commit.
+> It does not publish a shared current-main badge or write to repository branches.
 
-For template copies, update the image URL to your repository; see
-[automatic badge publishing](./docs/evaluator.md#automatic-badge-publishing).
+Download the SVG from the evaluation run's summary; see
+[automatic badge artifacts](./docs/evaluator.md#automatic-badge-artifacts).
 
 The [PR regression check](./.github/workflows/evaluation-regression.yml) evaluates changed
 `*.agent.md` files and complete skills under `.github/`, `.agents/`, and `.claude/`.
