@@ -107,13 +107,13 @@ Check `dry_run` for a mutation-free preview. No separate Copilot token is needed
 see [manual issue triage](./docs/agent-orchestration.md#manual-ai-issue-priority-triage)
 for authentication, operation, and recovery details.
 
-Submitted approvals also activate **Merge Approved Trivial PRs** for
+Submitted approvals also activate **Classify Approved Trivial PRs** for
 same-repository PRs targeting `main`. Copilot assesses whether the changes are
-small and low-risk, including functional fixes. Nontrivial changes stay untouched;
-the workflow leaves all PRs open because GitHub's merge API cannot atomically pin
-the analyzed base SHA. It will not risk merging onto an unanalyzed base.
-See [review-triggered automerge](./docs/agent-orchestration.md#review-triggered-trivial-pr-automerge)
-for policy, guardrails, and failure handling.
+small and low-risk, including functional fixes. The workflow publishes its
+classification but never merges or modifies a PR; use the normal review and
+merge process.
+See [review-triggered trivial PR classification](./docs/agent-orchestration.md#review-triggered-trivial-pr-classification)
+for policy and guardrails.
 
 The [/evaluator](/evaluator/) tool discovers agent and skill definitions in the supported
 `.github/` and `.agents/` locations, evaluates them with AI, and assigns each one a score. It can
