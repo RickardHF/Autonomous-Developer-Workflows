@@ -15,6 +15,120 @@ protection depend on repository branch rules outside these workflows.
 | [Plan Gate](../.github/workflows/plan-gate.yml)               | `pull_request` to `main`                                               | Checks the required plan text on PRs authored by `github-actions[bot]`; it is skipped for other authors. |
 | [Evaluate Agents & Skills](../.github/workflows/evaluate.yml) | `workflow_dispatch`                                                    | Scores agent/skill definitions and publishes a badge.             |
 | [AI Issue Priority Triage](../.github/workflows/issue-priority-triage.md) | `workflow_dispatch` only | Prioritizes every open issue and groups cohesive work using native sub-issues. |
+| [Merge Approved Trivial PRs](../.github/workflows/trivial-pr-automerge.yml) | `pull_request_review` | Uses Copilot to assess approved changes, squash merges trivial PRs under repository rules, cleans up their branches, and dispatches evaluation. |
+
+## Review-triggered trivial PR automerge
+
+The [Merge Approved Trivial PRs](../.github/workflows/trivial-pr-automerge.yml)
+workflow reacts to submitted, edited, and dismissed PR reviews. Only a
+**submitted approval** starts an assessment. The PR must be open, non-draft,
+originate in this repository, and target `main`. Fork PRs and other target
+branches are excluded; non-approving reviews do not start analysis.
+
+Copilot reviews the actual changes, not just the PR title or description.
+**Trivial can include small, low-risk functional fixes** as well as
+documentation, comments, spelling, formatting, and focused tests. Changes must
+be isolated, easily reversible, have a limited blast radius, and have enough
+context and test evidence to understand their behavior. Small size alone is
+not sufficient. Security/authentication/permission changes, data migrations,
+deployment changes, broad dependency upgrades, architectural changes, and
+broad refactors are nontrivial. Uncertainty means **do not merge**.
+
+Workflow/action changes and changes to the automerge helper/tests always require
+manual merging. Binary files, Git LFS pointers, symlinks, submodules, and
+file-type changes are also excluded because the supported text context cannot
+fully assess them. To avoid incomplete reviews, the helper requires complete
+before/after contents and enforces these inclusive upper limits:
+
+| Limit | Value |
+| --- | --- |
+| Changed files | 20 |
+| Added plus deleted lines | 500 |
+| Each before/after file | 128 KiB |
+| Total serialized review context | 256 KiB |
+
+Exceeding a limit is reported as an ineligible assessment, never silently
+truncated or interpreted as approval. Renames are assessed as a deletion plus
+an addition and count toward these limits.
+
+### Merge sequence and guardrails
+
+The analysis job checks out the explicit trusted base SHA, fetches candidate
+Git objects without checking out candidate files, and gathers the full changes
+from the common ancestor. It uses the existing Copilot setup action, disables
+custom instructions and built-in MCP servers, and exposes only read tools.
+Candidate code, actions, dependencies, and instructions are never executed.
+PR/repository text is untrusted data. Only an exact JSON decision containing
+`trivial: boolean` and a substantive `reason` is accepted; inference errors or
+malformed output fail the job without authorizing a merge.
+
+For a nontrivial decision, the workflow leaves the PR and branch untouched:
+no comments, labels, new reviews, or deferred auto-merge settings are added.
+The decision is visible in the Actions summary and analysis artifact.
+
+A separate write-capable job handles trivial decisions. It requires GitHub's
+aggregate review decision to be `APPROVED`, so configure a required review rule
+on `main`; the current repository already requires one approval. It also checks
+that the triggering review is still approved for the exact analyzed head.
+This matters even when the ruleset does not dismiss stale reviews on pushes.
+
+The job polls required checks and GitHub merge readiness for up to **60
+attempts**, with **15 seconds between attempts**. Failed/cancelled required
+checks, conflicts, withdrawn approval, or changed head/base revisions prevent
+merging. If the bounded wait expires, the PR remains open; another submitted
+approval starts a fresh attempt. Attempts are serialized per PR rather than
+cancelling an in-progress merge.
+
+Immediately before merging, the job rechecks requirements and live revisions.
+It requests a **squash merge with the expected head SHA**. GitHub's repository
+rules remain authoritative: no admin bypass, forced update, or auto-merge queue
+is used. Do not make this workflow itself a required check, which could make
+it wait for its own completion.
+
+Only after GitHub confirms the merge does cleanup consider deleting the source
+branch. It verifies the merge result, refuses default/protected branches and
+branches used by another open PR, and rechecks that the branch still points to
+the analyzed head. An advanced branch is kept and the reason is reported.
+GitHub's branch-deletion API has no atomic expected-SHA condition: the final
+check reduces, but cannot eliminate, a race with a concurrent push.
+
+### Authentication, evaluation, and recovery
+
+No new PAT, GitHub App, repository-wide auto-merge setting, or automatic
+branch-deletion setting is needed. Analysis uses the built-in Actions token
+with read permissions and `copilot-requests: write`. The isolated merge job has
+`contents: write`, `pull-requests: write`, `checks: read`, and `actions: write`;
+it has no Copilot inference permission. Copilot access/billing requirements are
+the same as the existing pipelines.
+
+Merges made with `GITHUB_TOKEN` do not trigger push-based workflows. After a
+confirmed merge, this workflow explicitly dispatches **`evaluate.yml` on
+`main`** so the evaluation badge can still be refreshed. The dispatched run
+evaluates the current `main` revision, which may include subsequent merges.
+Cleanup and evaluation dispatch are separate steps, each eligible after a
+successful merge even if the other fails.
+
+Review the Actions summary and `trivial-pr-analysis-<run_id>` /
+`trivial-pr-results-<run_id>` artifacts, retained for 14 days. API and inference
+errors fail visibly. A completed merge cannot be rolled back if branch cleanup
+or evaluation dispatch fails, and the summary reports each operation separately.
+If dispatch fails after a successful merge, rerun evaluation manually:
+
+```bash
+gh workflow run evaluate.yml --ref main
+```
+
+If cleanup fails, inspect the source branch and its other PRs before deleting it
+manually. Rerunning the full automerge job on an already-merged PR does not
+perform another merge or repeat post-merge operations.
+
+The workflow must be published before qualifying approvals can activate it.
+Focused tests use real temporary Git fixtures plus mocked Copilot/GitHub calls
+and do not merge or delete live PRs:
+
+```bash
+node --test .github/scripts/trivial-pr-automerge.test.cjs
+```
 
 ## Manual AI issue priority triage
 

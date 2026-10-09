@@ -23,10 +23,16 @@ Participants learn how to move from individual customizations to reliable agenti
 
 ## Evaluation Status
 
-![Evaluation Results](./eval-badge.svg)
+![Evaluation Results](https://raw.githubusercontent.com/RickardHF/Autonomous-Developer-Workflows/evaluation-results/eval-badge.svg)
 
-> The badge is updated by successful runs of the
-> [Evaluate Agents & Skills](./.github/workflows/evaluate.yml) workflow.
+> The [Evaluate Agents & Skills](./.github/workflows/evaluate.yml) workflow runs on every
+> push to `main`, cancels superseded runs, and publishes successful results to the
+> `evaluation-results` branch without pushing to protected `main`.
+> Failed or canceled runs leave the previous badge unchanged. The image becomes
+> available after the first successful publication.
+
+For template copies, update the image URL to your repository; see
+[automatic badge publishing](./docs/evaluator.md#automatic-badge-publishing).
 
 The [PR regression check](./.github/workflows/evaluation-regression.yml) evaluates changed
 `*.agent.md` files and complete skills under `.github/`, `.agents/`, and `.claude/`.
@@ -100,6 +106,14 @@ groups cohesive tasks using reusable native parent/sub-issue relationships.
 Check `dry_run` for a mutation-free preview. No separate Copilot token is needed;
 see [manual issue triage](./docs/agent-orchestration.md#manual-ai-issue-priority-triage)
 for authentication, operation, and recovery details.
+
+Submitted approvals also activate **Merge Approved Trivial PRs** for
+same-repository PRs targeting `main`. Copilot assesses whether the changes are
+small and low-risk, including functional fixes. Nontrivial changes stay untouched;
+trivial changes are squash merged only after required checks and merge rules
+pass, then the source branch is safely cleaned up and evaluation is dispatched.
+See [review-triggered automerge](./docs/agent-orchestration.md#review-triggered-trivial-pr-automerge)
+for policy, guardrails, and failure handling.
 
 The [/evaluator](/evaluator/) tool discovers agent and skill definitions in the supported
 `.github/` and `.agents/` locations, evaluates them with AI, and assigns each one a score. It can

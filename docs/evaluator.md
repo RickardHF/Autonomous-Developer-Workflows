@@ -152,10 +152,55 @@ The badge contains a score row for each valid result and a rounded average. Its 
 | `--output <file>` | `../eval-badge.svg` | SVG file to create. |
 | `--date <date>` | Today | Date shown on the badge. |
 
-The manually triggered [Evaluate Agents & Skills](../.github/workflows/evaluate.yml) workflow:
+### Automatic badge publishing
 
-1. Runs the repository-wide evaluation and captures per-definition failures separately.
+The [Evaluate Agents & Skills](../.github/workflows/evaluate.yml) workflow runs on
+every push to `main`, without path filters, and can also be started with
+**Actions -> Evaluate Agents & Skills -> Run workflow**. New runs cancel
+in-progress runs of this workflow for the same source branch.
+
+1. Evaluates the exact triggering commit and captures per-definition failures separately.
 2. Adds a workflow annotation and an **Open in GitHub Copilot** link for each successful result.
-3. Publishes the scores and average in the job summary.
-4. Generates and uploads the badge as a workflow artifact.
-5. Commits `eval-badge.svg` back to the branch when its contents changed.
+3. Publishes the scores, average, and evaluated commit in the job summary.
+4. Generates a fresh SVG and uploads it as the `eval-badge` workflow artifact.
+5. For successful main runs, commits changed SVG content to `evaluation-results`,
+   provided the evaluated commit is still the current remote `main`.
+
+The first successful publication creates an independent output branch containing
+`eval-badge.svg`. Updates use normal fast-forward commits, not force pushes. The
+workflow uses `GITHUB_TOKEN` with `contents: write`; it does not push to `main`,
+create badge-update PRs, or require a ruleset bypass. Keep branch rules scoped so
+they allow this output branch to be updated, and do not merge it into `main`.
+The existing GitHub Pages deployment from `main` is unaffected.
+
+Manual runs on other branches generate preview artifacts and summaries but do
+not update the shared main badge. Failed or canceled runs leave the published
+SVG unchanged. Individual definition errors retain the existing warning
+behavior: successful scores can still produce a badge if the overall run
+succeeds. This workflow does not introduce a stricter completeness gate.
+
+The README displays the latest successfully published main evaluation using:
+
+```text
+https://raw.githubusercontent.com/OWNER/REPOSITORY/evaluation-results/eval-badge.svg
+```
+
+When creating a template copy, replace `OWNER/REPOSITORY` in the README image URL
+with your repository. The image is unavailable until the first successful
+publication. The tracked root `eval-badge.svg` is no longer updated by automation;
+the local CLI's default badge output path remains unchanged.
+
+GitHub does not trigger `push` workflows for writes authenticated with
+`GITHUB_TOKEN`. Ordinary user pushes and PR merges trigger evaluation; automation
+that updates main using `GITHUB_TOKEN` must explicitly dispatch evaluation if it
+also needs a new badge.
+
+After installing the evaluator dependencies, run the publishing workflow tests
+from the repository root:
+
+```bash
+node --test .github/scripts/evaluation-workflow.test.cjs
+```
+
+These tests execute the workflow's publishing script against disposable local
+Git repositories. They do not require Copilot authentication or write to GitHub.

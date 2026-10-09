@@ -1,0 +1,215 @@
+name: Merge Approved Trivial PRs
+
+on:
+  pull_request_review:
+    types: [submitted, edited, dismissed]
+
+concurrency:
+  group: trivial-pr-automerge-${{ github.event.pull_request.number }}
+  cancel-in-progress: false
+
+permissions: {}
+
+jobs:
+  classify:
+    name: Classify approved changes
+    if: >-
+      github.event.action == 'submitted' &&
+      github.event.review.state == 'approved' &&
+      github.event.pull_request.state == 'open' &&
+      github.event.pull_request.draft == false &&
+      github.event.pull_request.base.ref == 'main' &&
+      github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      pull-requests: read
+      copilot-requests: write
+    outputs:
+      trivial: ${{ steps.classify.outputs.trivial }}
+    steps:
+      - name: Checkout trusted base, never candidate code
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.pull_request.base.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Collect complete change snapshot
+        id: snapshot
+        uses: actions/github-script@v9
+        env:
+          GH_TOKEN: ${{ github.token }}
+        with:
+          script: |
+            const fs = require("node:fs");
+            const path = require("node:path");
+            const { collectSnapshot } = require(path.join(process.env.GITHUB_WORKSPACE, ".github/scripts/trivial-pr-automerge.cjs"));
+            const snapshot = await collectSnapshot({
+              github, event: context.payload, repository: process.env.GITHUB_REPOSITORY,
+              runId: process.env.GITHUB_RUN_ID, cwd: process.env.GITHUB_WORKSPACE,
+            });
+            fs.mkdirSync("out/trivial-pr-automerge", { recursive: true });
+            fs.writeFileSync("out/trivial-pr-automerge/snapshot.json", JSON.stringify(snapshot, null, 2));
+            core.setOutput("eligible", String(snapshot.eligible));
+            await core.summary.addHeading("Review-triggered PR assessment")
+              .addCodeBlock(snapshot.reason).write();
+
+      - name: Install Copilot CLI
+        if: steps.snapshot.outputs.eligible == 'true'
+        uses: ./.github/actions/setup-copilot-cli
+
+      - name: Classify changes with read-only Copilot
+        id: classify
+        if: steps.snapshot.outputs.eligible == 'true'
+        uses: actions/github-script@v9
+        env:
+          COPILOT_GITHUB_TOKEN: ${{ github.token }}
+        with:
+          script: |
+            const fs = require("node:fs");
+            const path = require("node:path");
+            const { runCopilot } = require(path.join(process.env.GITHUB_WORKSPACE, ".github/scripts/trivial-pr-automerge.cjs"));
+            const { decision } = runCopilot(
+              path.join(process.env.GITHUB_WORKSPACE, "out/trivial-pr-automerge/snapshot.json"),
+              {
+                cwd: process.env.GITHUB_WORKSPACE,
+                onOutput: (raw) => fs.writeFileSync("out/trivial-pr-automerge/copilot-output.txt", raw),
+              },
+            );
+            fs.writeFileSync("out/trivial-pr-automerge/decision.json", JSON.stringify(decision, null, 2));
+            core.setOutput("trivial", String(decision.trivial));
+            await core.summary.addHeading(decision.trivial ? "Trivial: eligible for guarded merging" : "Nontrivial: no PR changes")
+              .addCodeBlock(JSON.stringify(decision, null, 2), "json").write();
+
+      - name: Report incomplete classification
+        if: failure()
+        run: echo "Classification did not complete. No merge is authorized; inspect the job error and snapshot." >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload analysis evidence
+        if: always() && steps.snapshot.outcome == 'success'
+        uses: actions/upload-artifact@v7
+        with:
+          name: trivial-pr-analysis-${{ github.run_id }}
+          path: out/trivial-pr-automerge/
+          overwrite: true
+          if-no-files-found: error
+          retention-days: 14
+
+  merge:
+    name: Guarded squash merge and cleanup
+    needs: classify
+    if: needs.classify.result == 'success' && needs.classify.outputs.trivial == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: write
+      pull-requests: write
+      checks: read
+      actions: write
+    steps:
+      - name: Checkout trusted merge helper
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.pull_request.base.sha }}
+          persist-credentials: false
+
+      - name: Download this run's analysis
+        uses: actions/download-artifact@v8
+        with:
+          name: trivial-pr-analysis-${{ github.run_id }}
+          path: out/trivial-pr-automerge
+
+      - name: Wait for required checks and squash merge exact head
+        id: merge
+        uses: actions/github-script@v9
+        env:
+          GH_TOKEN: ${{ github.token }}
+        with:
+          script: |
+            const fs = require("node:fs");
+            const path = require("node:path");
+            const { mergeIfReady } = require(path.join(process.env.GITHUB_WORKSPACE, ".github/scripts/trivial-pr-automerge.cjs"));
+            const snapshot = JSON.parse(fs.readFileSync("out/trivial-pr-automerge/snapshot.json", "utf8"));
+            const decision = JSON.parse(fs.readFileSync("out/trivial-pr-automerge/decision.json", "utf8"));
+            const result = await mergeIfReady({
+              github, event: context.payload, repository: process.env.GITHUB_REPOSITORY,
+              runId: process.env.GITHUB_RUN_ID, snapshot, decision,
+              onProgress: (message) => core.info(message),
+            });
+            core.setOutput("merged", String(result.merged));
+            if (result.merged) core.setOutput("merge_sha", result.merge_sha);
+            fs.mkdirSync("out/trivial-pr-results", { recursive: true });
+            fs.writeFileSync("out/trivial-pr-results/merge.json", JSON.stringify(result, null, 2));
+            await core.summary.addHeading(result.merged ? "PR squash merged" : "PR left untouched")
+              .addCodeBlock(result.reason).write();
+
+      - name: Delete unchanged unprotected source branch
+        id: cleanup
+        if: always() && steps.merge.outputs.merged == 'true'
+        uses: actions/github-script@v9
+        env:
+          MERGE_SHA: ${{ steps.merge.outputs.merge_sha }}
+        with:
+          script: |
+            const fs = require("node:fs");
+            const path = require("node:path");
+            const { deleteSourceBranch } = require(path.join(process.env.GITHUB_WORKSPACE, ".github/scripts/trivial-pr-automerge.cjs"));
+            const result = await deleteSourceBranch({
+              github, event: context.payload, repository: process.env.GITHUB_REPOSITORY,
+              runId: process.env.GITHUB_RUN_ID,
+              snapshot: JSON.parse(fs.readFileSync("out/trivial-pr-automerge/snapshot.json", "utf8")),
+              mergeSha: process.env.MERGE_SHA,
+            });
+            fs.writeFileSync("out/trivial-pr-results/cleanup.json", JSON.stringify(result, null, 2));
+            if (!result.deleted) core.warning(result.reason);
+            await core.summary.addHeading("Source branch cleanup").addCodeBlock(result.reason).write();
+
+      - name: Dispatch main evaluation after confirmed merge
+        id: evaluation
+        if: always() && steps.merge.outputs.merged == 'true'
+        uses: actions/github-script@v9
+        env:
+          MERGE_SHA: ${{ steps.merge.outputs.merge_sha }}
+        with:
+          script: |
+            const fs = require("node:fs");
+            const path = require("node:path");
+            const { dispatchEvaluation } = require(path.join(process.env.GITHUB_WORKSPACE, ".github/scripts/trivial-pr-automerge.cjs"));
+            const result = await dispatchEvaluation({
+              github, event: context.payload, repository: process.env.GITHUB_REPOSITORY,
+              runId: process.env.GITHUB_RUN_ID,
+              snapshot: JSON.parse(fs.readFileSync("out/trivial-pr-automerge/snapshot.json", "utf8")),
+              mergeSha: process.env.MERGE_SHA,
+            });
+            fs.writeFileSync("out/trivial-pr-results/evaluation.json", JSON.stringify(result, null, 2));
+            await core.summary.addHeading("Post-merge evaluation").addCodeBlock(result.reason).write();
+
+      - name: Report operation outcomes
+        if: always()
+        uses: actions/github-script@v9
+        env:
+          STEP_RESULTS: ${{ toJSON(steps) }}
+        with:
+          script: |
+            const steps = JSON.parse(process.env.STEP_RESULTS);
+            await core.summary.addHeading("Automerge operation outcomes")
+              .addTable([
+                [{ data: "Operation", header: true }, { data: "Step outcome", header: true }],
+                ["Merge", steps.merge?.outcome || "not started"],
+                ["Branch cleanup", steps.cleanup?.outcome || "not started"],
+                ["Evaluation dispatch", steps.evaluation?.outcome || "not started"],
+              ])
+              .addRaw("A confirmed merge is not rolled back if cleanup or evaluation dispatch fails. See each operation's result and job errors.\n")
+              .write();
+
+      - name: Upload merge evidence
+        if: always() && (steps.merge.outcome == 'success' || steps.merge.outputs.merged == 'true')
+        uses: actions/upload-artifact@v7
+        with:
+          name: trivial-pr-results-${{ github.run_id }}
+          path: out/trivial-pr-results/
+          overwrite: true
+          if-no-files-found: error
+          retention-days: 14
