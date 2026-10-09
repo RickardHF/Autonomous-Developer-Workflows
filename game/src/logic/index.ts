@@ -22,12 +22,14 @@ export function update(state: GameState, deltaSeconds: number): GameState {
   let shapeX = state.shapeX + state.velocityX * deltaSeconds;
   let velocityX = state.velocityX;
 
-  if (shapeX > SHAPE_MAX_X) {
-    shapeX = SHAPE_MAX_X - (shapeX - SHAPE_MAX_X);
-    velocityX = -Math.abs(velocityX);
-  } else if (shapeX < SHAPE_MIN_X) {
-    shapeX = SHAPE_MIN_X + (SHAPE_MIN_X - shapeX);
-    velocityX = Math.abs(velocityX);
+  while (shapeX > SHAPE_MAX_X || shapeX < SHAPE_MIN_X) {
+    if (shapeX > SHAPE_MAX_X) {
+      shapeX = SHAPE_MAX_X - (shapeX - SHAPE_MAX_X);
+      velocityX = -Math.abs(velocityX);
+    } else {
+      shapeX = SHAPE_MIN_X + (SHAPE_MIN_X - shapeX);
+      velocityX = Math.abs(velocityX);
+    }
   }
 
   return {
