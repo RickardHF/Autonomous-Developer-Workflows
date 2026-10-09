@@ -6,6 +6,143 @@ import path from "node:path";
 import { evaluateAgentDefinition, evaluateSkillDefinition } from "./evaluate.js";
 import { generateBadgeSvg } from "./badge.js";
 const program = new Command();
+function normalizeExplicitFiles(files) {
+    return files
+        .flatMap((entry) => entry.split(","))
+        .map((entry) => entry.trim())
+        .filter(Boolean);
+}
+function resolveExplicitPath(inputPath) {
+    const candidates = new Set();
+    const raw = inputPath.trim();
+    candidates.add(raw);
+    const normalized = raw.replace(/\\/g, "/");
+    const aliasPatterns = [
+        normalized.replace(/(^|\/)agents\//, "$1.agents/"),
+        normalized.replace(/(^|\/)github\//, "$1.github/"),
+        normalized.replace(/(^|\/)agents$/, "$1.agents"),
+        normalized.replace(/(^|\/)github$/, "$1.github"),
+    ];
+    for (const candidate of aliasPatterns) {
+        if (candidate) {
+            candidates.add(candidate);
+        }
+    }
+    return [...candidates];
+}
+async function validateExplicitInputs(files, options) {
+    const agentFiles = [];
+    const skillDirectories = [];
+    const invalidEntries = [];
+    const normalizedFiles = normalizeExplicitFiles(files);
+    for (const file of normalizedFiles) {
+        const pathCandidates = resolveExplicitPath(file);
+        const resolvedPath = pathCandidates
+            .map((candidate) => path.resolve(candidate))
+            .find((candidate) => fs.existsSync(candidate)) ?? path.resolve(file);
+        if (!options.json) {
+            console.log("Processing file:", file);
+        }
+        if (resolvedPath.endsWith(".agent.md")) {
+            if (!fs.existsSync(resolvedPath) || !fs.statSync(resolvedPath).isFile()) {
+                invalidEntries.push(file);
+                continue;
+            }
+            agentFiles.push(resolvedPath);
+        }
+        else if (fs.existsSync(resolvedPath) && fs.lstatSync(resolvedPath).isDirectory()) {
+            const skillFile = path.join(resolvedPath, "SKILL.md");
+            if (!fs.existsSync(skillFile) || !fs.statSync(skillFile).isFile()) {
+                invalidEntries.push(file);
+                continue;
+            }
+            skillDirectories.push(resolvedPath);
+        }
+        else {
+            invalidEntries.push(file);
+        }
+    }
+    if (invalidEntries.length > 0) {
+        throw new Error(`Invalid evaluation inputs: ${invalidEntries.join(", ")}`);
+    }
+    if (agentFiles.length === 0 && skillDirectories.length === 0) {
+        throw new Error("No valid agent files or skill directories were provided.");
+    }
+    return { agentFiles, skillDirectories };
+}
+async function runEvaluationForFiles(agentFiles, skillDirectories, directory, options) {
+    const evaluationRuns = [];
+    for (const agentFile of agentFiles) {
+        if (!options.json) {
+            console.log("Found agent file:", agentFile);
+        }
+        // Get the content of the agent file
+        const content = await fs.promises.readFile(agentFile, "utf-8");
+        const evaluation = evaluateAgentDefinition(content);
+        evaluationRuns.push((async () => {
+            const e = await evaluation;
+            return {
+                fileName: path.posix.relative(directory, agentFile),
+                score: e.score,
+                reasoning: e.reasoning,
+            };
+        })());
+    }
+    for (const skillDirectory of skillDirectories) {
+        if (!options.json) {
+            console.log("Found skill directory:", skillDirectory);
+        }
+        // Get the SKILL.md file at root of the skill directory. If it doesn't exist, skip this directory
+        const skillFile = path.posix.join(skillDirectory, "SKILL.md");
+        let skillContent = "";
+        if (fs.existsSync(skillFile)) {
+            skillContent = await fs.promises.readFile(skillFile, "utf-8");
+        }
+        else {
+            const message = `SKILL.md not found in skill directory: ${skillDirectory}`;
+            if (options.json) {
+                console.error(message);
+            }
+            else {
+                console.log(message);
+            }
+            continue;
+        }
+        // Get all files in the skill directory. We need an array of objects with the relative path and content for each item.
+        // Ignore the SKILL.md file itself when collecting all other files in the skill directory
+        const skillFiles = await glob([path.posix.join(skillDirectory, "**/*")], { mark: true, dot: true });
+        const skillFileContents = [];
+        for (const skillFile of skillFiles) {
+            if (fs.existsSync(skillFile) && fs.statSync(skillFile).isFile() && path.posix.basename(skillFile) !== "SKILL.md") {
+                const content = await fs.promises.readFile(skillFile, "utf-8");
+                skillFileContents.push({ path: path.posix.relative(skillDirectory, skillFile), content });
+            }
+        }
+        const evaluation = evaluateSkillDefinition(skillContent, skillFileContents, skillDirectory);
+        evaluationRuns.push((async () => {
+            const e = await evaluation;
+            return {
+                fileName: path.posix.relative(directory, skillFile),
+                score: e.score,
+                reasoning: e.reasoning
+            };
+        })());
+    }
+    const results = await Promise.allSettled(evaluationRuns);
+    for (const result of results) {
+        if (result.status === "fulfilled") {
+            if (options.json) {
+                console.log(JSON.stringify(result.value));
+            }
+            else {
+                console.log(result.value);
+            }
+        }
+        else {
+            console.error("Error evaluating definition:", result.reason);
+        }
+    }
+}
 program
     .name("agent-eval")
     .description("CLI for the agent-token-usage evaluation tools");
@@ -44,84 +181,16 @@ program
         // Here you would implement the actual file search logic, e.g., using glob or fs modules
         const agentFiles = await glob(agent_patterns);
         const skillDirectories = await glob(skill_patterns, { mark: true });
-        const evaluationRuns = [];
-        for (const agentFile of agentFiles) {
-            if (!options.json) {
-                console.log("Found agent file:", agentFile);
-            }
-            // Get the content of the agent file
-            const content = await fs.promises.readFile(agentFile, "utf-8");
-            const evaluation = evaluateAgentDefinition(content);
-            evaluationRuns.push((async () => {
-                const e = await evaluation;
-                return {
-                    fileName: path.posix.relative(directory, agentFile),
-                    score: e.score,
-                    reasoning: e.reasoning,
-                };
-            })());
-        }
-        for (const skillDirectory of skillDirectories) {
-            if (!options.json) {
-                console.log("Found skill directory:", skillDirectory);
-            }
-            // Get the SKILL.md file at root of the skill directory. If it doesn't exist, skip this directory
-            const skillFile = path.posix.join(skillDirectory, "SKILL.md");
-            let skillContent = "";
-            if (fs.existsSync(skillFile)) {
-                skillContent = await fs.promises.readFile(skillFile, "utf-8");
-            }
-            else {
-                const message = `SKILL.md not found in skill directory: ${skillDirectory}`;
-                if (options.json) {
-                    console.error(message);
-                }
-                else {
-                    console.log(message);
-                }
-                continue;
-            }
-            // Get all files in the skill directory. We need an array of objects with the relative path and content for each item.
-            // Ignore the SKILL.md file itself when collecting all other files in the skill directory
-            const skillFiles = await glob([path.posix.join(skillDirectory, "**/*")], { mark: true, dot: true });
-            const skillFileContents = [];
-            for (const skillFile of skillFiles) {
-                if (fs.existsSync(skillFile) && fs.statSync(skillFile).isFile() && path.posix.basename(skillFile) !== "SKILL.md") {
-                    const content = await fs.promises.readFile(skillFile, "utf-8");
-                    skillFileContents.push({ path: path.posix.relative(skillDirectory, skillFile), content });
-                }
-            }
-            const evaluation = evaluateSkillDefinition(skillContent, skillFileContents);
-            evaluationRuns.push((async () => {
-                const e = await evaluation;
-                return {
-                    fileName: path.posix.relative(directory, skillFile),
-                    score: e.score,
-                    reasoning: e.reasoning
-                };
-            })());
-        }
-        const results = await Promise.allSettled(evaluationRuns);
-        for (const result of results) {
-            if (result.status === "fulfilled") {
-                if (options.json) {
-                    console.log(JSON.stringify(result.value));
-                }
-                else {
-                    console.log(result.value);
-                }
-            }
-            else {
-                console.error("Error evaluating definition:", result.reason);
-            }
-        }
+        await runEvaluationForFiles(agentFiles, skillDirectories, directory, options);
     }
     else {
-        for (const file of files) {
-            if (!options.json) {
-                console.log("Processing file:", file);
-            }
-        }
+        // all files in the specified list ending with ".agent.md" will be considered agent files
+        // all "files" that are directories will be considered skill directories
+        // if specified agent files does not exist -> throw an error and not proceed with evaluation
+        // if a directory does not exist or does not contain any skill files -> throw an error and not proceed with evaluation
+        // if any of the provided files do not meet the expected criteria -> throw an error and not proceed with evaluation
+        const { agentFiles, skillDirectories } = await validateExplicitInputs(files, options);
+        await runEvaluationForFiles(agentFiles, skillDirectories, path.resolve("."), options);
     }
 });
 program

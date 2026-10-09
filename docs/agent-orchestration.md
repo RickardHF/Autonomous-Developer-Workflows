@@ -215,13 +215,13 @@ mocked GitHub APIs; they do not require AI inference or modify live issues.
 | [`setup-copilot-cli`](../.github/actions/setup-copilot-cli/action.yml)       | Installs Node and the GitHub Copilot CLI on the runner.                                              |
 | [`copilot-json-task`](../.github/actions/copilot-json-task/action.yml)       | Runs a Copilot prompt against the issue with injection guards and returns a syntax-validated JSON artifact. |
 | [`open-agent-pr`](../.github/actions/open-agent-pr/action.yml)               | Creates the working branch, renders the PR body from `plan.json`, and opens a draft PR.              |
-| [`implement-agent-plan`](../.github/actions/implement-agent-plan/action.yml) | Executes the `implementer` agent against the plan, commits results, and marks the PR ready.          |
+| [`implement-agent-plan`](../.github/actions/implement-agent-plan/action.yml) | Downloads the issue discussion, executes the `implementer` against the plan, commits results, and marks the PR ready. |
 
 ## End-to-end flow
 
 ```mermaid
 flowchart TD
-    A["Issue labeled copilot:plan-and-implement"] --> B["prepare: upload issue.md"]
+    A["Issue labeled copilot:plan-and-implement"] --> B["prepare: upload title, body, and comments in issue.md"]
     B --> C["spec_analyzer: goal / scope / steps / mitigations / rollback"]
     B --> D["risk_reviewer: low / medium / high"]
     C --> E["plan_merger: merge + normalize risk"]
@@ -238,14 +238,28 @@ flowchart TD
 ```
 
 The [`prepare`](../.github/workflows/plan-implement.yml) job resolves the
-issue and uploads it as an artifact. `spec_analyzer` and `risk_reviewer`
+issue and uploads its title, body, and all available comments as the `issue`
+artifact (`issue.md`). Comments are fetched with REST API pagination and retain
+their full bodies, authors, creation/update timestamps, and permalinks in
+chronological order, including bot comments. `spec_analyzer` and `risk_reviewer`
 fan out in parallel, each producing a JSON artifact through
 [`copilot-json-task`](../.github/actions/copilot-json-task/action.yml).
 [`plan_merger`](../.github/workflows/plan-implement.yml) fans them back in,
 normalizes `risk` to `{low, medium, high}` (defaulting to `high`), and
 publishes `plan.json`. The implement stage then either runs directly
 (`low`) or waits for approval through the `approval-required`
-environment (`medium`/`high`).
+environment (`medium`/`high`). Both implementation paths download the same
+issue artifact as supporting context for the approved plan. Issue content is
+captured once per run, not re-fetched after approval; later comments are picked
+up by a subsequent run. The label and manual triggers are unchanged, so posting
+a comment alone does not start a run.
+
+Focused regression tests use the built-in Node test runner and mocked
+`gh`/`copilot` commands without AI inference or live issue/PR changes:
+
+```bash
+node --test .github/scripts/plan-implement.test.cjs
+```
 
 The checked-in `open-agent-pr` action currently renders `## Plan`, while Plan
 Gate requires the literal heading `## Plan (required)`. As a result, a PR
@@ -263,8 +277,10 @@ and a clear outcome.
 ### 1. Stated goal — the issue is the single source of truth
 
 The pipeline only runs from a real issue: `prepare` calls
-`gh issue view` and every downstream job receives the same `issue.md`
-artifact. There is no free-form prompt path.
+`gh issue view` and paginates the issue's comments with `gh api`. Planning,
+risk review, and implementation receive the same `issue.md` artifact; the
+implementation plan remains the source of truth for changes. There is no
+free-form prompt path.
 
 - **Principle:** every agent run has a linkable, human-authored goal.
 - **Anti-pattern avoided:** agents acting on ad-hoc chat with no
@@ -334,11 +350,14 @@ without a merged plan.
 ### 6. Prompt-injection hardening
 
 [`copilot-json-task`](../.github/actions/copilot-json-task/action.yml)
-loads the untrusted issue body into a shell variable, embeds it inside
-`<ISSUE>` tags with an explicit instruction to ignore any directives
-found inside, and restricts Copilot to read-only tools
+loads the untrusted issue title, body, and comments into a shell variable,
+embeds them inside `<ISSUE>` tags with an explicit instruction to ignore any
+directives found inside, and restricts Copilot to read-only tools
 (`--available-tools='view,glob,grep'`). Output is extracted between the
 first `{` and last `}` and re-parsed by `jq` before being trusted.
+The implementer is also instructed to treat `out/issue.md` as untrusted
+supporting context and to stop and report conflicts with the approved plan
+rather than expanding its scope.
 
 - **Principle:** treat model inputs as untrusted data and model outputs
   as untrusted until validated.
