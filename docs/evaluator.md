@@ -204,10 +204,49 @@ The badge contains a score row for each valid result and a rounded average. Its 
 | `--output <file>` | `../eval-badge.svg` | SVG file to create. |
 | `--date <date>` | Today | Date shown on the badge. |
 
-The manually triggered [Evaluate Agents & Skills](../.github/workflows/evaluate.yml) workflow:
+### Automatic badge artifacts
 
-1. Runs the repository-wide evaluation and captures per-definition failures separately.
+The [Evaluate Agents & Skills](../.github/workflows/evaluate.yml) workflow runs on
+every push to `main`, without path filters, and can also be started with
+**Actions -> Evaluate Agents & Skills -> Run workflow**. New runs cancel
+in-progress runs of this workflow for the same source branch.
+
+1. Evaluates the exact triggering commit and captures per-definition failures separately.
 2. Adds a workflow annotation and an **Open in GitHub Copilot** link for each successful result.
-3. Publishes the scores and average in the job summary.
-4. Generates and uploads the badge as a workflow artifact.
-5. Commits `eval-badge.svg` back to the branch when its contents changed.
+3. Publishes the scores, average, and evaluated commit in the job summary.
+4. Generates a fresh SVG labeled with the date and evaluated commit, then uploads
+   it as the run-specific `eval-badge` workflow artifact linked in the summary.
+
+Badges are snapshots, not a guarantee of the current `main` state. A separate
+freshness check followed by a badge push cannot atomically guard against `main`
+advancing at the push boundary. The workflow therefore does not publish a shared
+badge or update `evaluation-results`; it uses `GITHUB_TOKEN` with `contents: read`
+and never writes to repository branches. Any older output branch is left untouched
+and should not be treated as current. The existing GitHub Pages deployment from
+`main` is unaffected.
+
+Manual runs on other branches also generate snapshot artifacts and summaries.
+Badge generation and upload are success-gated; an artifact uploaded before a
+later cancellation still represents only its evaluated snapshot. Individual
+definition errors retain the existing warning behavior: successful scores can
+still produce a badge if the overall run succeeds. This workflow does not
+introduce a stricter completeness gate.
+
+The tracked root `eval-badge.svg` is not updated by automation; the local CLI's
+default badge output path remains unchanged.
+
+GitHub does not trigger `push` workflows for writes authenticated with
+`GITHUB_TOKEN`. Ordinary user pushes and PR merges trigger evaluation; automation
+that updates main using `GITHUB_TOKEN` must explicitly dispatch evaluation if it
+also needs a new badge.
+
+After installing the evaluator dependencies, run the evaluation workflow tests
+from the repository root:
+
+```bash
+npm --prefix evaluator run test:workflows
+```
+
+These tests execute workflow scripts with mocked evaluation and disposable local
+Git fixtures, including a concurrent `main` advance. They do not require Copilot
+authentication or write to GitHub.

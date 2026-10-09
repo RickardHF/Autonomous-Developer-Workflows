@@ -1,0 +1,95 @@
+name: Classify Approved Trivial PRs
+
+on:
+  pull_request_review:
+    types: [submitted, edited, dismissed]
+
+concurrency:
+  group: trivial-pr-automerge-${{ github.event.pull_request.number }}
+  cancel-in-progress: false
+
+permissions: {}
+
+jobs:
+  classify:
+    name: Classify approved changes
+    if: >-
+      github.event.action == 'submitted' &&
+      github.event.review.state == 'approved' &&
+      github.event.pull_request.state == 'open' &&
+      github.event.pull_request.draft == false &&
+      github.event.pull_request.base.ref == 'main' &&
+      github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      pull-requests: read
+      copilot-requests: write
+    steps:
+      - name: Checkout trusted base, never candidate code
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.pull_request.base.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Collect complete change snapshot
+        id: snapshot
+        uses: actions/github-script@v9
+        env:
+          GH_TOKEN: ${{ github.token }}
+        with:
+          script: |
+            const fs = require("node:fs");
+            const path = require("node:path");
+            const { collectSnapshot } = require(path.join(process.env.GITHUB_WORKSPACE, ".github/scripts/trivial-pr-automerge.cjs"));
+            const snapshot = await collectSnapshot({
+              github, event: context.payload, repository: process.env.GITHUB_REPOSITORY,
+              runId: process.env.GITHUB_RUN_ID, cwd: process.env.GITHUB_WORKSPACE,
+            });
+            fs.mkdirSync("out/trivial-pr-automerge", { recursive: true });
+            fs.writeFileSync("out/trivial-pr-automerge/snapshot.json", JSON.stringify(snapshot, null, 2));
+            core.setOutput("eligible", String(snapshot.eligible));
+            await core.summary.addHeading("Review-triggered PR assessment")
+              .addCodeBlock(snapshot.reason).write();
+
+      - name: Install Copilot CLI
+        if: steps.snapshot.outputs.eligible == 'true'
+        uses: ./.github/actions/setup-copilot-cli
+
+      - name: Classify changes with read-only Copilot
+        id: classify
+        if: steps.snapshot.outputs.eligible == 'true'
+        uses: actions/github-script@v9
+        env:
+          COPILOT_GITHUB_TOKEN: ${{ github.token }}
+        with:
+          script: |
+            const fs = require("node:fs");
+            const path = require("node:path");
+            const { runCopilot } = require(path.join(process.env.GITHUB_WORKSPACE, ".github/scripts/trivial-pr-automerge.cjs"));
+            const { decision } = runCopilot(
+              path.join(process.env.GITHUB_WORKSPACE, "out/trivial-pr-automerge/snapshot.json"),
+              {
+                cwd: process.env.GITHUB_WORKSPACE,
+                onOutput: (raw) => fs.writeFileSync("out/trivial-pr-automerge/copilot-output.txt", raw),
+              },
+            );
+            fs.writeFileSync("out/trivial-pr-automerge/decision.json", JSON.stringify(decision, null, 2));
+            await core.summary.addHeading(decision.trivial ? "Trivial: assessment complete" : "Nontrivial: assessment complete")
+              .addCodeBlock(JSON.stringify(decision, null, 2), "json").write();
+
+      - name: Report incomplete classification
+        if: failure()
+        run: echo "Classification did not complete. No merge is authorized; inspect the job error and snapshot." >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload analysis evidence
+        if: always() && steps.snapshot.outcome == 'success'
+        uses: actions/upload-artifact@v7
+        with:
+          name: trivial-pr-analysis-${{ github.run_id }}
+          path: out/trivial-pr-automerge/
+          overwrite: true
+          if-no-files-found: error
+          retention-days: 14

@@ -13,8 +13,77 @@ protection depend on repository branch rules outside these workflows.
 | ------------------------------------------------------------- | ---------------------------------------------------------------------- | ----------------------------------------------------------------- |
 | [Plan and Implement](../.github/workflows/plan-implement.yml) | `issues.labeled` (`copilot:plan-and-implement`) or `workflow_dispatch` | Plans, risk-scores, and implements the change on an agent branch. |
 | [Plan Gate](../.github/workflows/plan-gate.yml)               | `pull_request` to `main`                                               | Checks the required plan text on PRs authored by `github-actions[bot]`; it is skipped for other authors. |
-| [Evaluate Agents & Skills](../.github/workflows/evaluate.yml) | `workflow_dispatch`                                                    | Scores agent/skill definitions and publishes a badge.             |
+| [Evaluate Agents & Skills](../.github/workflows/evaluate.yml) | `push` to `main` or `workflow_dispatch` | Scores agent/skill definitions and uploads a commit-labeled badge artifact. |
 | [AI Issue Priority Triage](../.github/workflows/issue-priority-triage.md) | `workflow_dispatch` only | Prioritizes every open issue and groups cohesive work using native sub-issues. |
+| [Classify Approved Trivial PRs](../.github/workflows/trivial-pr-automerge.yml) | `pull_request_review` | Uses Copilot to assess approved changes and publishes its decision; it never merges or modifies a PR. |
+
+## Review-triggered trivial PR classification
+
+The [Classify Approved Trivial PRs](../.github/workflows/trivial-pr-automerge.yml)
+workflow reacts to submitted, edited, and dismissed PR reviews. Only a
+**submitted approval** starts an assessment. The PR must be open, non-draft,
+originate in this repository, and target `main`. Fork PRs and other target
+branches are excluded; non-approving reviews do not start analysis.
+The triggering approval must still cover the current head, but aggregate
+required-review rules do not gate classification. This assessment does not
+establish merge readiness.
+
+Copilot reviews the actual changes, not just the PR title or description, and
+publishes its decision in the Actions summary and `trivial-pr-analysis-<run_id>`
+artifact. The result is classification only: it does not merge, label, comment
+on, or otherwise modify the PR or its source branch. A trivial classification
+is not an authorization to merge; use the normal repository review and merge
+process.
+
+**Trivial can include small, low-risk functional fixes** as well as
+documentation, comments, spelling, formatting, and focused tests. Changes must
+be isolated, easily reversible, have a limited blast radius, and have enough
+context and test evidence to understand their behavior. Small size alone is
+not sufficient. Security/authentication/permission changes, data migrations,
+deployment changes, broad dependency upgrades, architectural changes, and
+broad refactors are nontrivial. Uncertainty means **classify as nontrivial**.
+
+Workflow/action changes and changes to the classification helper/tests are
+ineligible for automated assessment. Binary files, Git LFS pointers, symlinks,
+submodules, and file-type changes are also excluded because the supported text
+context cannot fully assess them. To avoid incomplete reviews, the helper
+requires complete before/after contents and enforces these inclusive upper
+limits:
+
+| Limit | Value |
+| --- | --- |
+| Changed files | 20 |
+| Added plus deleted lines | 500 |
+| Each before/after file | 128 KiB |
+| Total serialized review context | 256 KiB |
+
+Exceeding a limit is reported as an ineligible assessment, never silently
+truncated or interpreted as approval. Renames are assessed as a deletion plus
+an addition and count toward these limits.
+
+The analysis job checks out the explicit trusted base SHA, fetches candidate
+Git objects without checking out candidate files, and gathers the full changes
+from the common ancestor. It uses the existing Copilot setup action, disables
+custom instructions and built-in MCP servers, and exposes only read tools.
+Candidate code, actions, dependencies, and instructions are never executed.
+PR/repository text is untrusted data. Only an exact JSON decision containing
+`trivial: boolean` and a substantive `reason` is accepted; inference errors or
+malformed output fail the job. Analysis uses the built-in Actions token with
+`contents: read`, `pull-requests: read`, and `copilot-requests: write`; it has no
+write permission to merge or alter pull requests.
+
+Review the Actions summary and `trivial-pr-analysis-<run_id>` artifact, retained
+for 14 days. API and inference errors fail visibly. The workflow is not a merge
+gate; repository branch rules and the normal review process remain responsible
+for authorizing merges.
+
+The workflow must be published before qualifying approvals can activate it.
+Focused tests use real temporary Git fixtures plus mocked Copilot/GitHub calls
+and do not merge or delete live PRs:
+
+```bash
+npm --prefix evaluator run test:workflows
+```
 
 ## Manual AI issue priority triage
 

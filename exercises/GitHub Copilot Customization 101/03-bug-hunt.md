@@ -119,19 +119,19 @@ local evaluation routes for a second opinion grounded in the same rubric as the 
   git push origin main
   ```
 
-- [ ] Trigger the **Evaluate Agents & Skills** workflow to re-score everything and refresh the badge.
-      Either use the CLI:
+- [ ] Open the **Evaluate Agents & Skills** run triggered by your push to `main`. If it did not
+      start, trigger it manually:
 
   ```bash
   gh workflow run evaluate.yml --ref main
   ```
 
   or open the **Actions** tab on GitHub, select **Evaluate Agents & Skills**, and click **Run workflow**.
-- [ ] Watch the run finish (`gh run watch` or the Actions tab). When it completes, the workflow
-      commits an updated `eval-badge.svg`.
-- [ ] Refresh the [Evaluation Status badge in the README](../../README.md#evaluation-status) and
-      confirm the scores for the reviewer and script-conventions skill improved compared to the
-      baseline you noted in Step 1.
+- [ ] Watch the run finish (`gh run watch` or the Actions tab), then download its `eval-badge`
+      artifact from the run summary.
+- [ ] Compare the scores in the downloaded badge with the baseline you noted in Step 1. The
+      workflow uploads a run-specific artifact; it does not update `eval-badge.svg` or the
+      [Evaluation Status badge in the README](../../README.md#evaluation-status).
 
 ---
 

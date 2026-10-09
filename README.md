@@ -23,10 +23,13 @@ Participants learn how to move from individual customizations to reliable agenti
 
 ## Evaluation Status
 
-![Evaluation Results](./eval-badge.svg)
+> The [Evaluate Agents & Skills](./.github/workflows/evaluate.yml) workflow runs on every
+> push to `main`, cancels superseded runs, and uploads successful results as a
+> run-specific `eval-badge` artifact labeled with the evaluated commit.
+> It does not publish a shared current-main badge or write to repository branches.
 
-> The badge is updated by successful runs of the
-> [Evaluate Agents & Skills](./.github/workflows/evaluate.yml) workflow.
+Download the SVG from the evaluation run's summary; see
+[automatic badge artifacts](./docs/evaluator.md#automatic-badge-artifacts).
 
 The [PR regression check](./.github/workflows/evaluation-regression.yml) evaluates changed
 `*.agent.md` files and complete skills under `.github/`, `.agents/`, and `.claude/`.
@@ -100,6 +103,14 @@ groups cohesive tasks using reusable native parent/sub-issue relationships.
 Check `dry_run` for a mutation-free preview. No separate Copilot token is needed;
 see [manual issue triage](./docs/agent-orchestration.md#manual-ai-issue-priority-triage)
 for authentication, operation, and recovery details.
+
+Submitted approvals also activate **Classify Approved Trivial PRs** for
+same-repository PRs targeting `main`. Copilot assesses whether the changes are
+small and low-risk, including functional fixes. The workflow publishes its
+classification but never merges or modifies a PR; use the normal review and
+merge process.
+See [review-triggered trivial PR classification](./docs/agent-orchestration.md#review-triggered-trivial-pr-classification)
+for policy and guardrails.
 
 The [/evaluator](/evaluator/) tool discovers agent and skill definitions in the supported
 `.github/` and `.agents/` locations, evaluates them with AI, and assigns each one a score. It can

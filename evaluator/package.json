@@ -19,6 +19,7 @@
     "postbuild": "chmod +x dist/cli.js",
     "test": "node --import tsx --test --experimental-test-module-mocks cli.test.ts evaluate-definition.test.ts evaluate.test.ts regression.test.ts",
     "test:definitions": "node --import tsx --test --experimental-test-module-mocks evaluate-definition.test.ts",
+    "test:workflows": "node --test ../.github/scripts/evaluation-workflow.test.cjs ../.github/scripts/trivial-pr-automerge.test.cjs",
     "test:regression": "node --import tsx --test --experimental-test-module-mocks regression.test.ts"
   },
   "devDependencies": {

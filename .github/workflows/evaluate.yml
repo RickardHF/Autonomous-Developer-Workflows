@@ -1,18 +1,27 @@
 name: Evaluate Agents & Skills
 
 on:
+  push:
+    branches: [main]
   workflow_dispatch:
+
+concurrency:
+  group: evaluation-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   evaluate:
     runs-on: ubuntu-latest
     permissions:
-      contents: write
+      contents: read
       copilot-requests: write
 
     steps:
       - name: Checkout repository
         uses: actions/checkout@v7
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
 
       - name: Set up Node.js
         uses: actions/setup-node@v7
@@ -25,11 +34,14 @@ jobs:
         working-directory: evaluator
         run: npm ci
 
+      - name: Install Copilot CLI
+        uses: ./.github/actions/setup-copilot-cli
+
       - name: Run evaluation
         id: run_eval
         working-directory: evaluator
         env:
-          GITHUB_TOKEN: ${{ github.token }}
+          COPILOT_GITHUB_TOKEN: ${{ github.token }}
         run: |
           npx tsx cli.ts evaluate \
             --directory "${{ github.workspace }}" \
@@ -96,6 +108,7 @@ jobs:
         env:
           REPO_OWNER: ${{ github.repository_owner }}
           REPO_NAME: ${{ github.event.repository.name }}
+          SOURCE_SHA: ${{ github.sha }}
         run: |
           if [ ! -f eval_results.jsonl ]; then
             echo "No evaluation results." >> "$GITHUB_STEP_SUMMARY"
@@ -121,6 +134,8 @@ jobs:
           }
 
           echo "## 📊 Evaluation Results" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "Evaluated commit: \`${SOURCE_SHA}\`" >> "$GITHUB_STEP_SUMMARY"
           echo "" >> "$GITHUB_STEP_SUMMARY"
           echo "| File | Score | Reasoning | Action |" >> "$GITHUB_STEP_SUMMARY"
           echo "|------|-------|-----------|--------|" >> "$GITHUB_STEP_SUMMARY"
@@ -148,42 +163,38 @@ jobs:
           echo "|------|-------|-----------|--------|" >> "$GITHUB_STEP_SUMMARY"
           echo "| **Average** | ${avg_emoji} **${avg}/10** | | |" >> "$GITHUB_STEP_SUMMARY"
           echo "" >> "$GITHUB_STEP_SUMMARY"
-          echo "![Evaluation Badge](https://raw.githubusercontent.com/${{ github.repository }}/${{ github.ref_name }}/eval-badge.svg)" >> "$GITHUB_STEP_SUMMARY"
 
       - name: Generate evaluation badge
-        if: always()
+        id: generate_badge
+        if: success()
         working-directory: evaluator
+        env:
+          BADGE_PATH: ${{ runner.temp }}/evaluation-output/eval-badge.svg
+          SOURCE_SHA: ${{ github.sha }}
         run: |
-          if [ ! -f eval_results.jsonl ]; then
-            echo "No results to generate badge from."
-            exit 0
-          fi
           npx tsx cli.ts badge \
             --input eval_results.jsonl \
-            --output "${{ github.workspace }}/eval-badge.svg" \
-            --date "$(date -u +%Y-%m-%d)"
+            --output "$BADGE_PATH" \
+            --date "$(date -u +%Y-%m-%d) ${SOURCE_SHA:0:12}"
 
       - name: Upload badge artifact
-        if: always()
-        uses: actions/upload-artifact@v4
+        id: upload_badge
+        if: success()
+        uses: actions/upload-artifact@v7
         with:
           name: eval-badge
-          path: eval-badge.svg
-          if-no-files-found: ignore
+          path: ${{ runner.temp }}/evaluation-output/eval-badge.svg
+          if-no-files-found: error
 
-      - name: Commit evaluation badge
+      - name: Badge summary
         if: always()
+        env:
+          UPLOAD_OUTCOME: ${{ steps.upload_badge.outcome }}
+          SOURCE_SHA: ${{ github.sha }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |
-          if [ ! -f "${{ github.workspace }}/eval-badge.svg" ]; then
-            echo "No badge file to commit."
-            exit 0
-          fi
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add eval-badge.svg
-          if git diff --cached --quiet; then
-            echo "No changes to badge."
+          if [ "$UPLOAD_OUTCOME" = "success" ]; then
+            echo "The SVG for evaluated commit \`${SOURCE_SHA}\` is available in this run's [eval-badge artifact](${RUN_URL}#artifacts). This is a snapshot, not a current-main badge." >> "$GITHUB_STEP_SUMMARY"
           else
-            git commit -m "chore: update evaluation badge [skip ci]"
-            git push
+            echo "No badge artifact was uploaded." >> "$GITHUB_STEP_SUMMARY"
           fi
