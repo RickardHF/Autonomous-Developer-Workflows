@@ -153,7 +153,11 @@ async function collectSnapshot({ github, event, repository, runId, cwd, runGit =
   const fetched = runGit(cwd, ["rev-parse", ref]).toString("utf8").trim();
   if (fetched !== snapshot.head_sha) return { ...snapshot, eligible: false, reason: "PR head changed during collection" };
   const context = collectChanges({ cwd, baseSha: snapshot.base_sha, headSha: snapshot.head_sha, runGit });
-  return { ...snapshot, ...context, eligible: context.complete, reason: context.reason || "Ready for Copilot analysis" };
+  const result = { ...snapshot, ...context, eligible: context.complete, reason: context.reason || "Ready for Copilot analysis" };
+  if (Buffer.byteLength(JSON.stringify(result, null, 2)) > LIMITS.contextBytes) {
+    return { ...snapshot, eligible: false, reason: `PR exceeds the ${LIMITS.contextBytes}-byte total review context limit` };
+  }
+  return result;
 }
 
 function validateSnapshot(snapshot, { event, repository, runId }) {
