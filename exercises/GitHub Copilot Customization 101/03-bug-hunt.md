@@ -9,10 +9,11 @@ Two intentionally broken files are waiting for you:
 - `.github/skills/broken-script-conventions/SKILL.md`
 
 > **See the current state first.** Before editing either file, establish the evaluation baseline
-> from an `eval-badge` artifact for the current revision. If no such artifact is available, run an
+> from the [Evaluation Status image in the README](../../README.md#evaluation-status).
+> Check its evaluated commit. If it does not cover the current revision, run an
 > initial evaluation using the Direct CLI option in Step 5. Confirm it includes both broken files
-> above and record their scores; if it does not, ask the instructor. The [Evaluate Agents & Skills](../../.github/workflows/evaluate.yml)
-> workflow uploads run-specific artifacts and does not refresh a README badge.
+> above and record their scores; if it does not, ask the instructor. The **Evaluate Agents & Skills**
+> workflow refreshes the image automatically after a complete main evaluation, without committing output.
 
 ## Step 1 — See it fail
 
@@ -126,11 +127,11 @@ local evaluation routes for a second opinion grounded in the same rubric as the 
   ```
 
   or open the **Actions** tab on GitHub, select **Evaluate Agents & Skills**, and click **Run workflow**.
-- [ ] Watch the run finish (`gh run watch` or the Actions tab), then download its `eval-badge`
-      artifact from the run summary.
-- [ ] Compare the scores in the downloaded badge with the baseline you noted in Step 1. The
-      workflow uploads a run-specific artifact; it does not update `eval-badge.svg` or the
-      [Evaluation Status badge in the README](../../README.md#evaluation-status).
+- [ ] Watch the run finish (`gh run watch` or the Actions tab), then follow the summary's
+      **View the SVG directly** link or open the [Evaluation Status image in the README](../../README.md#evaluation-status).
+      Wait for Pages publication and check that the image's evaluated commit matches your changes.
+- [ ] Compare the visible scores with the baseline you noted in Step 1. If evaluation fails or
+      is incomplete, the previous complete image remains visible; inspect the workflow diagnostics.
 
 ---
 

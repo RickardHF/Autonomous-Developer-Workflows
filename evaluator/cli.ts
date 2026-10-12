@@ -5,6 +5,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { evaluateAgentDefinition, evaluateSkillDefinition } from "./evaluate.js";
 import { generateBadgeSvg, type BadgeEntry } from "./badge.js";
+import { discoverDefinitions } from "./discovery.js";
 
 const program = new Command();
 
@@ -194,19 +195,7 @@ program
                 console.log(`Directory full path: ${directory}`);
             }
 
-            const agent_patterns: string[] = [
-                path.posix.join(directory, ".github/agents/*.agent.md"),
-                path.posix.join(directory, ".agents/agents/*.agent.md")
-            ];
-
-            const skill_patterns: string[] = [
-                path.posix.join(directory, ".agents/skills/*/"),
-                path.posix.join(directory, ".github/skills/*/"),
-                path.posix.join(directory, ".agents/skills/*/")
-            ];
-            // Here you would implement the actual file search logic, e.g., using glob or fs modules
-            const agentFiles = await glob(agent_patterns);
-            const skillDirectories = await glob(skill_patterns, { mark: true });
+            const { agentFiles, skillDirectories } = await discoverDefinitions(directory);
 
             await runEvaluationForFiles(agentFiles, skillDirectories, directory, options);
 

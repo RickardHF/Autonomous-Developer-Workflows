@@ -31,13 +31,16 @@ The workshop is published at
 
 Configure the repository under **Settings → Pages**:
 
-1. Set **Source** to **Deploy from a branch**.
-2. Select the `main` branch and the `/(root)` folder.
-3. Save the Pages settings.
+1. Set **Source** to **GitHub Actions**.
+2. Keep the `github-pages` environment restricted to `main`, without recurring reviewer approval.
+3. Run **Publish Workshop & Evaluation** to deploy the site; main pushes refresh it automatically.
 
 The root [`index.html`](../index.html) redirects to `/learn/`, while [`.nojekyll`](../.nojekyll)
-keeps the repository content static. Publish the repository root rather than only `learn/`: the app
-loads the root `README.md` and the files under `exercises/` at runtime.
+keeps the repository content static. The [Pages workflow](../.github/workflows/pages.yml)
+publishes the tracked repository root rather than only `learn/`: the app loads the root `README.md`
+and the files under `exercises/` at runtime. It also publishes the latest complete evaluation SVG
+and scores under `evaluation/`. Site updates do not wait for AI evaluation, and failed evaluations
+leave the last complete scores visible. See [Pages setup and recovery](../docs/evaluator.md#pages-setup-and-recovery).
 
 ## How it works
 

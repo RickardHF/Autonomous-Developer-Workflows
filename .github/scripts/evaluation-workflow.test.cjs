@@ -52,7 +52,9 @@ function fixture(context) {
       ...gitEnvironment,
       RUNNER_TEMP: runnerTemp,
       SOURCE_SHA: main,
-      BADGE_PATH: badge,
+      SOURCE_REF: "refs/heads/main",
+      GITHUB_WORKSPACE: source,
+      GITHUB_REPOSITORY: "example/project",
     },
     run(run = generator.run, overrides = {}, cwd = source) {
       return spawnSync("bash", ["--noprofile", "--norc", "-e", "-o", "pipefail", "-c", run], {
@@ -77,14 +79,15 @@ if [ "\${MOCK_EXIT:-0}" != 0 ]; then
 fi
 while [ "$#" -gt 0 ]; do
   if [ "$1" = --output ]; then
-    mkdir -p "$(dirname "$2")"
-    printf '%s\\n' '<svg>generated fixture</svg>' > "$2"
+    mkdir -p "$2"
+    printf '%s\\n' '<svg>generated fixture</svg>' > "$2/eval-badge.svg"
     exit 0
   fi
   shift
 done
 exit 1
 `, { mode: 0o755 });
+      writeFileSync(join(bin, "gh"), "#!/bin/bash\nprintf '%s\\n' 'https://example.github.io/project/'\n", { mode: 0o755 });
       return `${bin}:${process.env.PATH}`;
     },
   };
@@ -96,18 +99,18 @@ test("workflow evaluates every main push with success-gated artifacts and no bra
   assert.deepEqual(workflow.concurrency, {
     group: "evaluation-${{ github.ref }}", "cancel-in-progress": true,
   });
-  assert.deepEqual(workflow.jobs.evaluate.permissions, { contents: "read", "copilot-requests": "write" });
+  assert.deepEqual(workflow.jobs.evaluate.permissions, { contents: "read", pages: "read", "copilot-requests": "write" });
   const checkout = steps.find((entry) => entry.uses === "actions/checkout@v7");
   assert.deepEqual(checkout.with, { ref: "${{ github.sha }}", "persist-credentials": false });
   assert.ok(steps.some((entry) => entry.uses === "./.github/actions/setup-copilot-cli"));
   assert.equal(step("run_eval").env.COPILOT_GITHUB_TOKEN, "${{ github.token }}");
   assert.equal(generator.if, "success()");
   assert.equal(step("upload_badge").if, "success()");
-  assert.equal(generator.env.BADGE_PATH, "${{ runner.temp }}/evaluation-output/eval-badge.svg");
-  assert.equal(generator.env.SOURCE_SHA, "${{ github.sha }}");
-  assert.match(generator.run, /SOURCE_SHA:0:12/);
-  assert.equal(step("upload_badge").with.path, generator.env.BADGE_PATH);
-  assert.equal(step("upload_badge").with.name, "eval-badge");
+  assert.match(generator.run, /publication\.ts bundle/);
+  assert.match(generator.run, /--directory "\$GITHUB_WORKSPACE"/);
+  assert.match(generator.run, /--output "\$RUNNER_TEMP\/evaluation-output"/);
+  assert.equal(step("upload_badge").with.path, "${{ runner.temp }}/evaluation-output/");
+  assert.equal(step("upload_badge").with.name, "evaluation-output");
   assert.equal(step("upload_badge").with["if-no-files-found"], "error");
   assert.ok(steps.indexOf(generator) < steps.indexOf(step("upload_badge")));
   assert.ok(!steps.some((entry) => /publish|commit/i.test(entry.name)));
@@ -168,7 +171,28 @@ test("evaluation process failures propagate while per-definition diagnostics ret
   assert.match(warning.stdout, /done/);
 });
 
-test("badge summaries identify the evaluated snapshot and distinguish artifacts from failures", (context) => {
+test("result summaries do not turn empty or invalid output into a successful zero or NaN average", (context) => {
+  const f = fixture(context);
+  const summary = join(f.runnerTemp, "summary.md");
+  const input = join(f.source, "evaluator", "eval_results.jsonl");
+  const run = steps.find((entry) => entry.name === "Summary").run;
+  const execute = () => f.run(run, { GITHUB_STEP_SUMMARY: summary }, join(f.source, "evaluator"));
+  writeFileSync(input, "");
+  assert.equal(execute().status, 0);
+  assert.match(readFileSync(summary, "utf8"), /No new SVG can be published/);
+  assert.doesNotMatch(readFileSync(summary, "utf8"), /NaN|Average/);
+  writeFileSync(input, '{"fileName":"example.agent.md","score":0,"reasoning":"Invalid"}\n');
+  assert.notEqual(execute().status, 0);
+  writeFileSync(input, "not JSON\n");
+  assert.notEqual(execute().status, 0);
+  writeFileSync(input, '{"fileName":"example.agent.md","score":7,"reasoning":"Partial fixture"}\n');
+  writeFileSync(summary, "");
+  assert.equal(execute().status, 0);
+  assert.match(readFileSync(summary, "utf8"), /may be partial; publication requires a complete evaluation/);
+  assert.doesNotMatch(readFileSync(summary, "utf8"), /NaN/);
+});
+
+test("badge summaries display a direct SVG and identify complete, failed, and non-main evaluations", (context) => {
   const f = fixture(context);
   const summary = join(f.runnerTemp, "summary.md");
   const run = steps.find((entry) => entry.name === "Badge summary").run;
@@ -177,15 +201,20 @@ test("badge summaries identify the evaluated snapshot and distinguish artifacts 
     SOURCE_SHA: f.main,
     RUN_URL: "https://github.com/example/project/actions/runs/1",
     UPLOAD_OUTCOME: "success",
+    PATH: f.mockNpx(),
   };
   const preview = f.run(run, env);
   assert.equal(preview.status, 0, preview.stderr);
-  assert.match(readFileSync(summary, "utf8"), /eval-badge artifact.*snapshot, not a current-main badge/);
+  assert.match(readFileSync(summary, "utf8"), /Pages publishes it automatically after this run succeeds/);
   assert.match(readFileSync(summary, "utf8"), new RegExp(f.main));
-  assert.doesNotMatch(readFileSync(summary, "utf8"), /!\[Evaluation Badge\]/);
+  assert.match(readFileSync(summary, "utf8"), /!\[Latest complete main evaluation\]\(https:\/\/example.github.io\/project\/evaluation\/eval-badge.svg\)/);
+  assert.doesNotMatch(readFileSync(summary, "utf8"), /#artifacts/);
   writeFileSync(summary, "");
   assert.equal(f.run(run, { ...env, UPLOAD_OUTCOME: "skipped" }).status, 0);
-  assert.match(readFileSync(summary, "utf8"), /No badge artifact was uploaded/);
+  assert.match(readFileSync(summary, "utf8"), /Evaluation was not published.*last complete main SVG is unchanged/);
+  writeFileSync(summary, "");
+  assert.equal(f.run(run, { ...env, SOURCE_REF: "refs/heads/feature" }).status, 0);
+  assert.match(readFileSync(summary, "utf8"), /non-main runs do not update the public image/);
 });
 
 test("main advancing at the former publication boundary cannot publish a stale shared badge", (context) => {
@@ -201,10 +230,11 @@ test("main advancing at the former publication boundary cannot publish a stale s
   const result = f.run(steps.find((entry) => entry.name === "Badge summary").run, {
     GITHUB_STEP_SUMMARY: summary, UPLOAD_OUTCOME: "success",
     RUN_URL: "https://github.com/example/project/actions/runs/1",
+    PATH: path,
   });
   assert.equal(result.status, 0, result.stderr);
   assert.match(readFileSync(summary, "utf8"), new RegExp(f.main));
-  assert.match(readFileSync(summary, "utf8"), /snapshot, not a current-main badge/);
+  assert.match(readFileSync(summary, "utf8"), /latest published complete main evaluation/);
   assert.equal(readFileSync(f.badge, "utf8"), svg);
   assert.equal(f.published(), "");
   assert.equal(git(f.source, "--git-dir", f.remote, "rev-parse", "main"), nextMain);
