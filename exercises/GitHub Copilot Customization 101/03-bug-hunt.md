@@ -8,12 +8,11 @@ Two intentionally broken files are waiting for you:
 - `.github/agents/broken-reviewer.agent.md`
 - `.github/skills/broken-script-conventions/SKILL.md`
 
-> **See the current state first.** The [Evaluation Status badge in the README](../../README.md#evaluation-status)
-> reflects the latest scores for every agent and skill in this repo. Before starting, confirm it
-> lists both broken files above; if it does not, ask the instructor to refresh it. Note their
-> current scores as the evaluation baseline. The badge is refreshed by the
-> [Evaluate Agents & Skills](../../.github/workflows/evaluate.yml) workflow, which you'll run
-> yourself at the end of this exercise.
+> **See the current state first.** Before editing either file, establish the evaluation baseline
+> from an `eval-badge` artifact for the current revision. If no such artifact is available, run an
+> initial evaluation using the Direct CLI option in Step 5. Confirm it includes both broken files
+> above and record their scores; if it does not, ask the instructor. The [Evaluate Agents & Skills](../../.github/workflows/evaluate.yml)
+> workflow uploads run-specific artifacts and does not refresh a README badge.
 
 ## Step 1 — See it fail
 
@@ -119,19 +118,19 @@ local evaluation routes for a second opinion grounded in the same rubric as the 
   git push origin main
   ```
 
-- [ ] Trigger the **Evaluate Agents & Skills** workflow to re-score everything and refresh the badge.
-      Either use the CLI:
+- [ ] Open the **Evaluate Agents & Skills** run triggered by your push to `main`. If it did not
+      start, trigger it manually:
 
   ```bash
   gh workflow run evaluate.yml --ref main
   ```
 
   or open the **Actions** tab on GitHub, select **Evaluate Agents & Skills**, and click **Run workflow**.
-- [ ] Watch the run finish (`gh run watch` or the Actions tab). When it completes, the workflow
-      commits an updated `eval-badge.svg`.
-- [ ] Refresh the [Evaluation Status badge in the README](../../README.md#evaluation-status) and
-      confirm the scores for the reviewer and script-conventions skill improved compared to the
-      baseline you noted in Step 1.
+- [ ] Watch the run finish (`gh run watch` or the Actions tab), then download its `eval-badge`
+      artifact from the run summary.
+- [ ] Compare the scores in the downloaded badge with the baseline you noted in Step 1. The
+      workflow uploads a run-specific artifact; it does not update `eval-badge.svg` or the
+      [Evaluation Status badge in the README](../../README.md#evaluation-status).
 
 ---
 
