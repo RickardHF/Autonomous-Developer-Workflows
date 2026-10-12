@@ -1,4 +1,5 @@
 .DS_Store
+evaluator/dist/
 
 # McSquishy game build and dependency output
 game/node_modules/
