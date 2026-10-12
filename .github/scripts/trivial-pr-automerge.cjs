@@ -103,7 +103,7 @@ function collectChanges({ cwd, baseSha, headSha, runGit = git }) {
     lines += Number(match[1]) + Number(match[2]);
   }
   if (lines > LIMITS.lines) return stop(`PR exceeds the ${LIMITS.lines}-changed-line review limit`);
-  const decoder = new TextDecoder("utf-8", { fatal: true });
+  const decoder = new TextDecoder("utf-8", { fatal: true, ignoreBOM: true });
   for (const change of changes) {
     for (const [field, revision, mode] of [
       ["before", mergeBase, change.old_mode], ["after", headSha, change.new_mode],
