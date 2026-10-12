@@ -35,6 +35,15 @@ on, or otherwise modify the PR or its source branch. A trivial classification
 is not an authorization to merge; use the normal repository review and merge
 process.
 
+After Copilot finishes, the workflow rechecks the triggering approval and the
+PR's open/non-draft state, source/target branches, and base/head revisions.
+If any changed, `decision.json` reports `status: stale` without a trivial verdict,
+and the summary marks the assessment as withheld. Raw inference output remains
+in the artifact for diagnostics only. A failed freshness check publishes no
+completed decision. Completed decisions record the analyzed revisions and review
+ID; their freshness reflects this final check, not an atomic publication guarantee
+or a promise that the PR will remain unchanged afterward.
+
 **Trivial can include small, low-risk functional fixes** as well as
 documentation, comments, spelling, formatting, and focused tests. Changes must
 be isolated, easily reversible, have a limited blast radius, and have enough

@@ -68,16 +68,17 @@ jobs:
           script: |
             const fs = require("node:fs");
             const path = require("node:path");
-            const { runCopilot } = require(path.join(process.env.GITHUB_WORKSPACE, ".github/scripts/trivial-pr-automerge.cjs"));
-            const { decision } = runCopilot(
-              path.join(process.env.GITHUB_WORKSPACE, "out/trivial-pr-automerge/snapshot.json"),
-              {
-                cwd: process.env.GITHUB_WORKSPACE,
-                onOutput: (raw) => fs.writeFileSync("out/trivial-pr-automerge/copilot-output.txt", raw),
-              },
-            );
+            const { classifySnapshot } = require(path.join(process.env.GITHUB_WORKSPACE, ".github/scripts/trivial-pr-automerge.cjs"));
+            const snapshotPath = path.join(process.env.GITHUB_WORKSPACE, "out/trivial-pr-automerge/snapshot.json");
+            const decision = await classifySnapshot({
+              github, event: context.payload, repository: process.env.GITHUB_REPOSITORY,
+              runId: process.env.GITHUB_RUN_ID, snapshot: JSON.parse(fs.readFileSync(snapshotPath, "utf8")),
+              snapshotPath, cwd: process.env.GITHUB_WORKSPACE,
+              onOutput: (raw) => fs.writeFileSync("out/trivial-pr-automerge/copilot-output.txt", raw),
+            });
             fs.writeFileSync("out/trivial-pr-automerge/decision.json", JSON.stringify(decision, null, 2));
-            await core.summary.addHeading(decision.trivial ? "Trivial: assessment complete" : "Nontrivial: assessment complete")
+            await core.summary.addHeading(decision.status === "stale" ? "Stale: assessment withheld" :
+              decision.trivial ? "Trivial: assessment complete" : "Nontrivial: assessment complete")
               .addCodeBlock(JSON.stringify(decision, null, 2), "json").write();
 
       - name: Report incomplete classification

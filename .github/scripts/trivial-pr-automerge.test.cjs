@@ -8,7 +8,7 @@ const { test } = require("node:test");
 const helpers = require("./trivial-pr-automerge.cjs");
 const {
   LIMITS, eligibility, collectChanges, collectSnapshot, validateSnapshot, validateDecision,
-  runCopilot,
+  runCopilot, classifySnapshot,
 } = helpers;
 
 const REPOSITORY = "example/project";
@@ -138,6 +138,89 @@ test("snapshot identity is bound to the original review, run, PR, repository, an
     head_sha: BASE, base_sha: HEAD, head_ref: "main", complete: false, eligible: false,
     merge_base_sha: "", changes: [],
   })) assert.throws(() => validateSnapshot({ ...input.snapshot, [field]: value }, input), /snapshot does not match/);
+});
+
+test("classification rechecks live state after inference and binds completed decisions to revisions", async () => {
+  for (const trivial of [true, false]) {
+    const { github, input } = fixture();
+    let inferred = false;
+    const request = github.request.bind(github);
+    github.request = (...args) => {
+      assert.equal(inferred, true);
+      return request(...args);
+    };
+    const result = await classifySnapshot({
+      ...input, snapshotPath: "snapshot.json",
+      run: () => {
+        inferred = true;
+        return { status: 0, stdout: JSON.stringify({ trivial, reason: REASON }), stderr: "" };
+      },
+    });
+    assert.deepEqual(result, { status: "complete", trivial, reason: REASON,
+      base_sha: BASE, head_sha: HEAD, review_id: 70 });
+    assert.equal(github.calls.length, 3);
+    assert.deepEqual(github.writes(), []);
+  }
+});
+
+test("approval and PR changes during inference withhold the classification verdict", async () => {
+  for (const mutate of [
+    (g) => { g.review.state = "DISMISSED"; },
+    (g) => { g.review.commit_id = BASE; },
+    (g) => { g.review.id = 71; },
+    (g) => { g.pr.head.sha = BASE; },
+    (g) => { g.pr.base.sha = HEAD; },
+    (g) => { g.gate.headRefOid = BASE; },
+    (g) => { g.gate.baseRefOid = HEAD; },
+    (g) => { g.pr.state = "closed"; },
+    (g) => { g.pr.merged = true; },
+    (g) => { g.pr.draft = true; },
+    (g) => { g.pr.head.ref = "other"; },
+    (g) => { g.pr.head.repo = null; },
+    (g) => { g.pr.base.ref = "release"; },
+    (g) => { g.pr.base.repo.full_name = "other/project"; },
+  ]) {
+    const { github, input } = fixture();
+    let captured;
+    const result = await classifySnapshot({
+      ...input, snapshotPath: "snapshot.json",
+      run: () => {
+        mutate(github);
+        return { status: 0, stdout: JSON.stringify({ trivial: true, reason: REASON }), stderr: "" };
+      },
+      onOutput: (raw) => { captured = raw; },
+    });
+    assert.equal(result.status, "stale");
+    assert.equal(Object.hasOwn(result, "trivial"), false);
+    assert.equal(typeof result.reason, "string");
+    assert.equal(result.head_sha, HEAD);
+    assert.equal(result.base_sha, BASE);
+    assert.equal(result.review_id, 70);
+    assert.equal(JSON.parse(captured).trivial, true);
+    assert.deepEqual(github.writes(), []);
+  }
+});
+
+test("classification fails closed when the final freshness check cannot complete", async () => {
+  for (const mutate of [
+    (g) => { g.request = async () => { throw new Error("GitHub unavailable"); }; },
+    (g) => { g.gate = null; },
+  ]) {
+    const { github, input } = fixture();
+    await assert.rejects(classifySnapshot({
+      ...input, snapshotPath: "snapshot.json",
+      run: () => {
+        mutate(github);
+        return { status: 0, stdout: JSON.stringify({ trivial: true, reason: REASON }), stderr: "" };
+      },
+    }), /GitHub unavailable|GitHub did not return PR revisions/);
+  }
+  const { github, input } = fixture();
+  await assert.rejects(classifySnapshot({
+    ...input, snapshot: { ...input.snapshot, head_sha: BASE }, snapshotPath: "snapshot.json",
+    run: () => assert.fail("Invalid snapshots must not reach Copilot"),
+  }), /snapshot does not match/);
+  assert.deepEqual(github.calls, []);
 });
 
 test("change collection preserves full before/after content and unusual filenames without executing candidate code", (context) => {
@@ -307,6 +390,10 @@ test("workflow classifies eligible PRs with read-only repository permissions", (
   assert.equal(checkout.with["persist-credentials"], false);
   const cli = workflow.jobs.classify.steps.find((step) => step.id === "classify");
   assert.equal(cli.env.COPILOT_GITHUB_TOKEN, "${{ github.token }}");
+  assert.match(cli.with.script, /await classifySnapshot\(/);
+  assert.match(cli.with.script, /decision.status === "stale" \? "Stale: assessment withheld"/);
+  assert.ok(cli.with.script.indexOf("await classifySnapshot(") <
+    cli.with.script.indexOf('fs.writeFileSync("out/trivial-pr-automerge/decision.json"'));
   assert.equal(cli.with.script.includes('setOutput("trivial"'), false);
   assert.equal(workflow.jobs.classify.steps.some((step) => /merge|delete|dispatch/i.test(step.name)), false);
   for (const step of workflow.jobs.classify.steps.filter((step) => step.run)) {

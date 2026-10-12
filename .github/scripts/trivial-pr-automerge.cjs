@@ -214,7 +214,16 @@ function runCopilot(snapshotPath, { cwd, run = spawnSync, onOutput = () => {} } 
   return { raw: result.stdout, decision: validateDecision(JSON.parse(result.stdout.trim())) };
 }
 
+async function classifySnapshot({ github, event, repository, runId, snapshot, snapshotPath, cwd, run, onOutput }) {
+  validateSnapshot(snapshot, { event, repository, runId });
+  const { decision } = runCopilot(snapshotPath, { cwd, run, onOutput });
+  const stale = staleReason(await readState(github, repository, snapshot.pr_number, snapshot.review_id), snapshot);
+  const revisions = { base_sha: snapshot.base_sha, head_sha: snapshot.head_sha, review_id: snapshot.review_id };
+  if (stale) return { ...revisions, status: "stale", reason: stale };
+  return { ...revisions, status: "complete", ...decision };
+}
+
 module.exports = {
   LIMITS, eligibility, collectChanges, collectSnapshot,
-  validateSnapshot, validateDecision, buildPrompt, runCopilot,
+  validateSnapshot, validateDecision, buildPrompt, runCopilot, classifySnapshot,
 };
