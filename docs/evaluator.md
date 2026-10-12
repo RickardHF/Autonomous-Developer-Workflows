@@ -223,6 +223,9 @@ in-progress runs of this workflow for the same source branch.
    Raw results and errors are also retained in `evaluation-diagnostics` on failure.
 6. Links directly to the public SVG and embeds the latest published image in the
    job summary. Developers do not need to download an artifact to see the scores.
+   If Pages is not enabled or its URL lookup fails, the summary warns explicitly
+   without invalidating the complete evaluation; recover Pages and publish the
+   retained bundle without repeating AI evaluation.
 
 The [Publish Workshop & Evaluation](../.github/workflows/pages.yml) workflow
 deploys the **whole existing static workshop**, not just the badge. Main pushes
@@ -268,6 +271,11 @@ without recurring reviewer approval, and preserve the existing site URL.
 For a template copy, replace the README image/link with
 `https://<owner>.github.io/<repository>/evaluation/eval-badge.svg`, or your Pages
 custom-domain equivalent. Evaluation summaries obtain the actual Pages URL.
+Also replace the repository-specific Actions links in `README.md` and this
+document with your own
+`https://github.com/<owner>/<repository>/actions/workflows/evaluate.yml` and
+`https://github.com/<owner>/<repository>/actions/workflows/evaluation-regression.yml`
+URLs, so template users open their own runs rather than the upstream repository.
 
 Run **Evaluate Agents & Skills** on main to create the first complete snapshot.
 **Publish Workshop & Evaluation** can also be dispatched to refresh the site or

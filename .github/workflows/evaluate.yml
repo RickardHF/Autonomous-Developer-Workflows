@@ -209,18 +209,31 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |
-          pages_url=$(gh api "repos/$GITHUB_REPOSITORY/pages" --jq .html_url)
-          badge_url="${pages_url%/}/evaluation/eval-badge.svg"
+          badge_url=""
+          if pages_url=$(gh api "repos/$GITHUB_REPOSITORY/pages" --jq .html_url) && [[ "$pages_url" == https://* ]]; then
+            badge_url="${pages_url%/}/evaluation/eval-badge.svg"
+          else
+            echo "::warning::Pages viewer URL is unavailable. Evaluation evidence is retained; configure or recover Pages publishing separately."
+          fi
           if [ "$UPLOAD_OUTCOME" = "success" ]; then
             if [ "$SOURCE_REF" = "refs/heads/main" ]; then
-              echo "Complete evaluation for \`${SOURCE_SHA}\`. Pages publishes it automatically after this run succeeds; the image below shows the latest published complete main evaluation." >> "$GITHUB_STEP_SUMMARY"
+              echo "Complete evaluation for \`${SOURCE_SHA}\`. The Pages workflow publishes eligible main results after this run succeeds." >> "$GITHUB_STEP_SUMMARY"
             else
               echo "Complete snapshot for \`${SOURCE_SHA}\`; non-main runs do not update the public image." >> "$GITHUB_STEP_SUMMARY"
             fi
           else
             echo "**Evaluation was not published.** The last complete main SVG is unchanged. See the errors and [diagnostic evidence](${RUN_URL}#artifacts)." >> "$GITHUB_STEP_SUMMARY"
           fi
-          echo "" >> "$GITHUB_STEP_SUMMARY"
-          echo "[View the SVG directly](${badge_url})" >> "$GITHUB_STEP_SUMMARY"
-          echo "" >> "$GITHUB_STEP_SUMMARY"
-          echo "![Latest complete main evaluation](${badge_url})" >> "$GITHUB_STEP_SUMMARY"
+          if [ -n "$badge_url" ]; then
+            echo "" >> "$GITHUB_STEP_SUMMARY"
+            echo "[View the SVG directly](${badge_url})" >> "$GITHUB_STEP_SUMMARY"
+            echo "" >> "$GITHUB_STEP_SUMMARY"
+            echo "The image shows the latest published complete main evaluation, not necessarily this run." >> "$GITHUB_STEP_SUMMARY"
+            echo "![Latest complete main evaluation](${badge_url})" >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "" >> "$GITHUB_STEP_SUMMARY"
+            echo "**Pages viewer unavailable.** Evaluation evidence is retained in this run. Configure or recover Pages publishing separately." >> "$GITHUB_STEP_SUMMARY"
+            if [ "$UPLOAD_OUTCOME" = "success" ]; then
+              echo "The complete bundle can be published without repeating AI evaluation." >> "$GITHUB_STEP_SUMMARY"
+            fi
+          fi

@@ -87,7 +87,13 @@ while [ "$#" -gt 0 ]; do
 done
 exit 1
 `, { mode: 0o755 });
-      writeFileSync(join(bin, "gh"), "#!/bin/bash\nprintf '%s\\n' 'https://example.github.io/project/'\n", { mode: 0o755 });
+      writeFileSync(join(bin, "gh"), `#!/bin/bash
+if [ "\${MOCK_PAGES_EXIT:-0}" != 0 ]; then
+  echo "Fixture Pages API unavailable" >&2
+  exit "$MOCK_PAGES_EXIT"
+fi
+printf '%s\\n' "\${MOCK_PAGES_URL:-https://example.github.io/project/}"
+`, { mode: 0o755 });
       return `${bin}:${process.env.PATH}`;
     },
   };
@@ -205,7 +211,7 @@ test("badge summaries display a direct SVG and identify complete, failed, and no
   };
   const preview = f.run(run, env);
   assert.equal(preview.status, 0, preview.stderr);
-  assert.match(readFileSync(summary, "utf8"), /Pages publishes it automatically after this run succeeds/);
+  assert.match(readFileSync(summary, "utf8"), /Pages workflow publishes eligible main results after this run succeeds/);
   assert.match(readFileSync(summary, "utf8"), new RegExp(f.main));
   assert.match(readFileSync(summary, "utf8"), /!\[Latest complete main evaluation\]\(https:\/\/example.github.io\/project\/evaluation\/eval-badge.svg\)/);
   assert.doesNotMatch(readFileSync(summary, "utf8"), /#artifacts/);
@@ -215,6 +221,32 @@ test("badge summaries display a direct SVG and identify complete, failed, and no
   writeFileSync(summary, "");
   assert.equal(f.run(run, { ...env, SOURCE_REF: "refs/heads/feature" }).status, 0);
   assert.match(readFileSync(summary, "utf8"), /non-main runs do not update the public image/);
+});
+
+test("optional Pages URL failures cannot invalidate a complete evaluation or create a broken viewer link", (context) => {
+  const f = fixture(context);
+  const summary = join(f.runnerTemp, "summary.md");
+  const run = steps.find((entry) => entry.name === "Badge summary").run;
+  const env = {
+    GITHUB_STEP_SUMMARY: summary, UPLOAD_OUTCOME: "success",
+    RUN_URL: "https://github.com/example/project/actions/runs/1",
+    PATH: f.mockNpx(),
+  };
+  for (const overrides of [{ MOCK_PAGES_EXIT: "1" }, { MOCK_PAGES_URL: "null" }]) {
+    writeFileSync(summary, "");
+    const result = f.run(run, { ...env, ...overrides });
+    assert.equal(result.status, 0, result.stderr);
+    assert.match(result.stdout, /::warning::Pages viewer URL is unavailable/);
+    const markdown = readFileSync(summary, "utf8");
+    assert.match(markdown, /Complete evaluation/);
+    assert.match(markdown, /Pages viewer unavailable/);
+    assert.match(markdown, /complete bundle can be published without repeating AI evaluation/);
+    assert.doesNotMatch(markdown, /!\[|View the SVG directly/);
+  }
+  writeFileSync(summary, "");
+  assert.equal(f.run(run, { ...env, MOCK_PAGES_EXIT: "1", UPLOAD_OUTCOME: "skipped" }).status, 0);
+  assert.match(readFileSync(summary, "utf8"), /Evaluation was not published/);
+  assert.doesNotMatch(readFileSync(summary, "utf8"), /without repeating AI evaluation/);
 });
 
 test("main advancing at the former publication boundary cannot publish a stale shared badge", (context) => {

@@ -55,7 +55,8 @@ on `main` after publishing the workflow.
 - [ ] In `Settings` → `Actions` → `General`, enable
       **Allow GitHub Actions to create and approve pull requests**, then save.
 - [ ] In `Settings` → `Pages`, set **Source** to **GitHub Actions**. In a template copy,
-      update the Evaluation Status image and link above to your own Pages URL; see
+      update the evaluation image/viewer URLs and Actions workflow links in `README.md`
+      and `docs/evaluator.md` to your own repository's Pages and Actions URLs; see
       [Pages setup](./docs/evaluator.md#pages-setup-and-recovery).
 
 #### Setting up environments
