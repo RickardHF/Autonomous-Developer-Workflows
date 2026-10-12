@@ -114,7 +114,7 @@ for policy and guardrails.
 
 The [/evaluator](/evaluator/) tool discovers agent and skill definitions in the supported
 `.github/` and `.agents/` locations, evaluates them with AI, and assigns each one a score. It can
-also format the results as the badge shown above.
+also format the results as an SVG badge, which is uploaded as a run-specific artifact.
 
 See the [evaluator documentation](./docs/evaluator.md) for usage, arguments, evaluation flow, and badge generation.
 

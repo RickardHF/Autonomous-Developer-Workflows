@@ -8,12 +8,11 @@ Two intentionally broken files are waiting for you:
 - `.github/agents/broken-reviewer.agent.md`
 - `.github/skills/broken-script-conventions/SKILL.md`
 
-> **See the current state first.** The [Evaluation Status badge in the README](../../README.md#evaluation-status)
-> reflects the latest scores for every agent and skill in this repo. Before starting, confirm it
-> lists both broken files above; if it does not, ask the instructor to refresh it. Note their
-> current scores as the evaluation baseline. The badge is refreshed by the
-> [Evaluate Agents & Skills](../../.github/workflows/evaluate.yml) workflow, which you'll run
-> yourself at the end of this exercise.
+> **See the current state first.** Before editing either file, establish the evaluation baseline
+> from an `eval-badge` artifact for the current revision. If no such artifact is available, run an
+> initial evaluation using the Direct CLI option in Step 5. Confirm it includes both broken files
+> above and record their scores; if it does not, ask the instructor. The [Evaluate Agents & Skills](../../.github/workflows/evaluate.yml)
+> workflow uploads run-specific artifacts and does not refresh a README badge.
 
 ## Step 1 — See it fail
 
