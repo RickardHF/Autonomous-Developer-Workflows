@@ -1,4 +1,9 @@
-export const PLACEHOLDER_COLOR = "#7dd3fc";
+import { createInitialState, update } from "./logic/index.ts";
+import { PLACEHOLDER_COLOR, render } from "./render/index.ts";
+
+const MAX_DELTA_SECONDS = 0.1;
+
+export { PLACEHOLDER_COLOR };
 
 export function drawPlaceholder(canvas: HTMLCanvasElement): void {
   const context = canvas.getContext("2d");
@@ -7,13 +12,7 @@ export function drawPlaceholder(canvas: HTMLCanvasElement): void {
     throw new Error("The game canvas does not provide a 2D rendering context.");
   }
 
-  context.fillStyle = PLACEHOLDER_COLOR;
-  context.fillRect(0, 0, canvas.width, canvas.height);
-  context.fillStyle = "#172554";
-  context.font = "24px sans-serif";
-  context.textAlign = "center";
-  context.textBaseline = "middle";
-  context.fillText("McSquishy is getting ready!", canvas.width / 2, canvas.height / 2);
+  render(context, createInitialState());
 }
 
 export function bootGame(documentRoot: Document): void {
@@ -23,7 +22,27 @@ export function bootGame(documentRoot: Document): void {
     throw new Error("The game canvas element was not found.");
   }
 
-  drawPlaceholder(canvas);
+  const context = canvas.getContext("2d");
+
+  if (context === null) {
+    throw new Error("The game canvas does not provide a 2D rendering context.");
+  }
+
+  let state = createInitialState();
+  let previousTimestamp: number | undefined;
+
+  const loop = (timestamp: number): void => {
+    const deltaSeconds =
+      previousTimestamp === undefined
+        ? 0
+        : Math.min((timestamp - previousTimestamp) / 1000, MAX_DELTA_SECONDS);
+    previousTimestamp = timestamp;
+    state = update(state, deltaSeconds);
+    render(context, state);
+    requestAnimationFrame(loop);
+  };
+
+  requestAnimationFrame(loop);
 }
 
 if (typeof document !== "undefined") {
