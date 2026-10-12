@@ -1,0 +1,81 @@
+name: Publish Workshop & Evaluation
+
+on:
+  push:
+    branches: [main]
+  workflow_run:
+    workflows: ["Evaluate Agents & Skills"]
+    types: [completed]
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: workshop-pages
+  cancel-in-progress: false
+
+permissions: {}
+
+jobs:
+  build:
+    if: >-
+      github.ref == 'refs/heads/main' &&
+      (github.event_name != 'workflow_run' ||
+       (github.event.workflow_run.conclusion == 'success' &&
+        github.event.workflow_run.head_repository.full_name == github.repository))
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      actions: read
+      pages: read
+    steps:
+      - name: Checkout current main, not the completed evaluation's revision
+        uses: actions/checkout@v7
+        with:
+          ref: main
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: "24"
+          cache: "npm"
+          cache-dependency-path: evaluator/package-lock.json
+
+      - name: Install publishing dependencies
+        working-directory: evaluator
+        run: npm ci
+
+      - name: Configure GitHub Pages
+        id: pages
+        uses: actions/configure-pages@v5
+
+      - name: Stage the workshop and latest complete main evaluation
+        working-directory: evaluator
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PAGES_URL: ${{ steps.pages.outputs.base_url }}
+        run: |
+          npx tsx publication.ts stage \
+            --directory "$GITHUB_WORKSPACE" \
+            --output "$RUNNER_TEMP/workshop-pages" \
+            --pages-url "$PAGES_URL"
+
+      - name: Upload the complete Pages site
+        uses: actions/upload-pages-artifact@v4
+        with:
+          path: ${{ runner.temp }}/workshop-pages
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy the workshop and evaluation together
+        id: deployment
+        uses: actions/deploy-pages@v4

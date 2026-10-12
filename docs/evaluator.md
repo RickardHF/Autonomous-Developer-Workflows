@@ -204,9 +204,9 @@ The badge contains a score row for each valid result and a rounded average. Its 
 | `--output <file>` | `../eval-badge.svg` | SVG file to create. |
 | `--date <date>` | Today | Date shown on the badge. |
 
-### Automatic badge artifacts
+### Automatic evaluation publishing
 
-The [Evaluate Agents & Skills](../.github/workflows/evaluate.yml) workflow runs on
+The [Evaluate Agents & Skills](https://github.com/RickardHF/Autonomous-Developer-Workflows/actions/workflows/evaluate.yml) workflow runs on
 every push to `main`, without path filters, and can also be started with
 **Actions -> Evaluate Agents & Skills -> Run workflow**. New runs cancel
 in-progress runs of this workflow for the same source branch.
@@ -214,31 +214,83 @@ in-progress runs of this workflow for the same source branch.
 1. Evaluates the exact triggering commit and captures per-definition failures separately.
 2. Adds a workflow annotation and an **Open in GitHub Copilot** link for each successful result.
 3. Publishes the scores, average, and evaluated commit in the job summary.
-4. Generates a fresh SVG labeled with the date and evaluated commit, then uploads
-   it as the run-specific `eval-badge` workflow artifact linked in the summary.
+4. Validates that every discovered definition has exactly one valid result.
+   Missing, duplicate, unexpected, malformed, or invalid results fail the run;
+   runtime errors cannot silently produce a partial published badge. Invalid
+   frontmatter still produces an ordinary score-1 result.
+5. Generates a fresh date/commit-labeled SVG and uploads an `evaluation-output`
+   bundle containing `eval-badge.svg`, `results.jsonl`, and `snapshot.json`.
+   Raw results and errors are also retained in `evaluation-diagnostics` on failure.
+6. Links directly to the public SVG and embeds the latest published image in the
+   job summary. Developers do not need to download an artifact to see the scores.
+   If Pages is not enabled or its URL lookup fails, the summary warns explicitly
+   without invalidating the complete evaluation; recover Pages and publish the
+   retained bundle without repeating AI evaluation.
 
-Badges are snapshots, not a guarantee of the current `main` state. A separate
-freshness check followed by a badge push cannot atomically guard against `main`
-advancing at the push boundary. The workflow therefore does not publish a shared
-badge or update `evaluation-results`; it uses `GITHUB_TOKEN` with `contents: read`
-and never writes to repository branches. Any older output branch is left untouched
-and should not be treated as current. The existing GitHub Pages deployment from
-`main` is unaffected.
+The [Publish Workshop & Evaluation](../.github/workflows/pages.yml) workflow
+deploys the **whole existing static workshop**, not just the badge. Main pushes
+update the site independently of evaluation. Successful main evaluations trigger
+another deployment to update the scores. Deployments are serialized, check out
+current main, and select the newest eligible complete main evaluation rather
+than blindly publishing whichever run finished last.
 
-Manual runs on other branches also generate snapshot artifacts and summaries.
-Badge generation and upload are success-gated; an artifact uploaded before a
-later cancellation still represents only its evaluated snapshot. Individual
-definition errors retain the existing warning behavior: successful scores can
-still produce a badge if the overall run succeeds. This workflow does not
-introduce a stricter completeness gate.
+The README embeds the permanent `evaluation/eval-badge.svg` Pages URL.
+`evaluation/results.jsonl` and `evaluation/snapshot.json` expose the scores and
+source metadata directly. The published snapshot is carried forward during
+site-only updates even after its Actions artifact expires. A failed or incomplete
+evaluation does not remove the last complete image; initial absence of any
+complete evaluation is shown explicitly as pending.
+
+The badge is the **latest complete evaluation**, not a guarantee that its source
+SHA equals main at every instant. Its date/commit label identifies the evaluated
+revision. Normal Pages and GitHub image-cache propagation may delay a refresh.
+Manual runs on other branches retain their diagnostic snapshots but cannot
+update the public image. Failed, cancelled, foreign-repository, or unrelated
+revision runs cannot supply the published snapshot.
+
+The PR regression check is independent of this publication pipeline: it still
+evaluates main and PR definitions freshly in the same run, without reading a
+badge, Pages JSON, or any saved Actions artifact.
 
 The tracked root `eval-badge.svg` is not updated by automation; the local CLI's
-default badge output path remains unchanged.
+default badge output path remains unchanged. Neither workflow commits output,
+opens badge-update PRs, writes a results branch, or bypasses main protection.
+Any older output branch is left untouched.
 
 GitHub does not trigger `push` workflows for writes authenticated with
 `GITHUB_TOKEN`. Ordinary user pushes and PR merges trigger evaluation; automation
 that updates main using `GITHUB_TOKEN` must explicitly dispatch evaluation if it
-also needs a new badge.
+also needs a new evaluation. Site-only automation can explicitly dispatch
+`pages.yml`.
+
+### Pages setup and recovery
+
+After the workflows reach `main`, set **Settings -> Pages -> Source** to
+**GitHub Actions** once. Keep the `github-pages` environment restricted to main,
+without recurring reviewer approval, and preserve the existing site URL.
+For a template copy, replace the README image/link with
+`https://<owner>.github.io/<repository>/evaluation/eval-badge.svg`, or your Pages
+custom-domain equivalent. Evaluation summaries obtain the actual Pages URL.
+Also replace the repository-specific Actions links in `README.md` and this
+document with your own
+`https://github.com/<owner>/<repository>/actions/workflows/evaluate.yml` and
+`https://github.com/<owner>/<repository>/actions/workflows/evaluation-regression.yml`
+URLs, so template users open their own runs rather than the upstream repository.
+
+Run **Evaluate Agents & Skills** on main to create the first complete snapshot.
+**Publish Workshop & Evaluation** can also be dispatched to refresh the site or
+recover a deployment without rerunning AI evaluation:
+
+```bash
+gh workflow run evaluate.yml --ref main
+gh workflow run pages.yml --ref main
+```
+
+Confirm the README image renders without downloads and `/learn/` still loads
+setup, exercise Markdown, and assets. Publication errors fail explicitly; they
+do not silently discard existing results. If the hosting migration fails,
+restore the previous branch-based Pages source while diagnosing the failure;
+do not weaken main protection.
 
 After installing the evaluator dependencies, run the evaluation workflow tests
 from the repository root:
@@ -247,6 +299,7 @@ from the repository root:
 npm --prefix evaluator run test:workflows
 ```
 
-These tests execute workflow scripts with mocked evaluation and disposable local
-Git fixtures, including a concurrent `main` advance. They do not require Copilot
-authentication or write to GitHub.
+These tests execute workflow scripts with mocked evaluation, publication/API
+fixtures, and disposable local Git repositories. They cover complete SVG output,
+retaining results on failures and artifact expiration, out-of-order runs, and
+site preservation. They do not require Copilot authentication or write to GitHub.

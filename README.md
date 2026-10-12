@@ -23,15 +23,16 @@ Participants learn how to move from individual customizations to reliable agenti
 
 ## Evaluation Status
 
-> The [Evaluate Agents & Skills](./.github/workflows/evaluate.yml) workflow runs on every
-> push to `main`, cancels superseded runs, and uploads successful results as a
-> run-specific `eval-badge` artifact labeled with the evaluated commit.
-> It does not publish a shared current-main badge or write to repository branches.
+[![Evaluation Results](https://rickardhf.github.io/Autonomous-Developer-Workflows/evaluation/eval-badge.svg)](https://rickardhf.github.io/Autonomous-Developer-Workflows/evaluation/eval-badge.svg)
 
-Download the SVG from the evaluation run's summary; see
-[automatic badge artifacts](./docs/evaluator.md#automatic-badge-artifacts).
+The [Evaluate Agents & Skills](https://github.com/RickardHF/Autonomous-Developer-Workflows/actions/workflows/evaluate.yml)
+workflow evaluates every push to `main`. GitHub Pages automatically displays the latest
+**complete** evaluation above, labeled with its evaluated commit; no download or generated
+Git commit is needed. Failed or incomplete evaluations leave the last complete image visible.
+The workshop site updates independently. See
+[automatic evaluation publishing](./docs/evaluator.md#automatic-evaluation-publishing).
 
-The [PR regression check](./.github/workflows/evaluation-regression.yml) evaluates changed
+The [PR regression check](https://github.com/RickardHF/Autonomous-Developer-Workflows/actions/workflows/evaluation-regression.yml) evaluates changed
 `*.agent.md` files and complete skills under `.github/`, `.agents/`, and `.claude/`.
 It compares freshly evaluated main and PR versions, failing if any score drops by **more than
 one point** or evaluation is incomplete. It runs on non-draft PR creation and subsequent commits,
@@ -53,6 +54,10 @@ on `main` after publishing the workflow.
       `src/TECHNICAL_REQUIREMENTS.md` into workshop issues.
 - [ ] In `Settings` → `Actions` → `General`, enable
       **Allow GitHub Actions to create and approve pull requests**, then save.
+- [ ] In `Settings` → `Pages`, set **Source** to **GitHub Actions**. In a template copy,
+      update the evaluation image/viewer URLs and Actions workflow links in `README.md`
+      and `docs/evaluator.md` to your own repository's Pages and Actions URLs; see
+      [Pages setup](./docs/evaluator.md#pages-setup-and-recovery).
 
 #### Setting up environments
 
