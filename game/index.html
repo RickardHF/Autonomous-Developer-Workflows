@@ -3,15 +3,93 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#faf7f0" />
+    <meta
+      name="description"
+      content="Meet McSquishy: a little jelly blob with a big adventure ahead. Explore an illustrated preview of his wonderfully weird world."
+    />
     <title>McSquishy: Blob on the Run</title>
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
   </head>
   <body>
-    <main>
-      <h1>McSquishy: Blob on the Run</h1>
-      <canvas id="game-canvas" width="800" height="450">
-        Your browser does not support the game canvas.
-      </canvas>
-    </main>
+    <div class="page-shell">
+      <header class="site-header">
+        <a class="brand" href="#main" aria-label="McSquishy home">
+          <svg class="brand-mark" viewBox="0 0 48 48" aria-hidden="true">
+            <path d="M24 5C12 5 5 19 5 31c0 9 9 12 19 10 11 3 20-1 19-10C42 19 36 5 24 5Z" fill="currentColor" />
+            <path d="M13 18c2-5 5-7 9-7" fill="none" stroke="#ffbaad" stroke-width="4" stroke-linecap="round" />
+            <path d="M18 24v4m12-4v4" stroke="#29283e" stroke-width="3" stroke-linecap="round" />
+            <path d="M21 32q3 3 6 0" fill="none" stroke="#29283e" stroke-width="2" stroke-linecap="round" />
+          </svg>
+          <span>McSquishy<span class="brand-period">.</span></span>
+        </a>
+        <span class="development-badge"><span class="status-dot"></span>A work in squish</span>
+      </header>
+
+      <main id="main">
+        <section class="introduction" aria-labelledby="page-title">
+          <div>
+            <p class="eyebrow">
+              <svg viewBox="0 0 20 20" aria-hidden="true">
+                <path d="m10 1 2.4 6.6L19 10l-6.6 2.4L10 19l-2.4-6.6L1 10l6.6-2.4Z" fill="currentColor" />
+              </svg>
+              Blob on the run
+            </p>
+            <h1 id="page-title">Small blob.<br /><span>Big adventure.</span></h1>
+          </div>
+          <div class="introduction-note">
+            <p>A little jelly. A lot of personality.<br />Meet your next small-but-mighty hero in a wonderfully weird world.</p>
+            <a class="preview-link" href="#world-preview">
+              Take a little peek <span aria-hidden="true">&#8599;</span>
+            </a>
+          </div>
+        </section>
+
+        <section class="world-preview" id="world-preview" aria-labelledby="scene-title" aria-describedby="preview-description">
+          <div class="scene-toolbar">
+            <div class="scene-heading">
+              <span class="scene-icon" aria-hidden="true">
+                <svg viewBox="0 0 24 24">
+                  <path d="M4 17 9 7l4 7 3-5 5 8Z" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" />
+                  <circle cx="18" cy="5" r="2" fill="currentColor" />
+                </svg>
+              </span>
+              <h2 id="scene-title">Squishy meadows<span>A world worth wobbling through</span></h2>
+            </div>
+            <span class="preview-badge"><span class="status-dot"></span>Animated preview</span>
+            <button class="preview-toggle" id="preview-toggle" type="button" aria-pressed="false">Pause animation</button>
+          </div>
+          <div class="scene-viewport">
+            <canvas
+              id="game-canvas"
+              width="800"
+              height="450"
+              role="application"
+              tabindex="0"
+              aria-label="Interactive McSquishy preview: a smiling coral jelly blob wanders through a pastel meadow with lilac hills, mint platforms, flowers, and fluffy clouds."
+              aria-describedby="preview-controls"
+            >
+              An illustrated meadow with McSquishy, a smiling coral jelly blob.
+              This preview needs a browser that supports Canvas 2D.
+            </canvas>
+          </div>
+          <div class="scene-caption" id="preview-description">
+            <span class="caption-label"><span aria-hidden="true">&#10022;</span> Little blob, big dreams.</span>
+            <span>This is a moving art preview. Playable adventures are still on the way.</span>
+          </div>
+          <p class="preview-controls" id="preview-controls">
+            Focus the preview to use the keyboard: Left/Right arrows or A/D to move,
+            Up arrow, W, or Space to request a jump, and P to pause or resume.
+            You can also use the Pause/Resume animation button.
+          </p>
+        </section>
+      </main>
+
+      <footer class="site-footer">
+        <p>Soft around the edges. Full of possibility.</p>
+        <span>Made for a little everyday escape <span class="footer-spark" aria-hidden="true">&#10022;</span></span>
+      </footer>
+    </div>
     <script type="module" src="/src/main.ts"></script>
   </body>
 </html>
