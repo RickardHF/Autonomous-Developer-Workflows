@@ -1,4 +1,5 @@
-import { createInitialState, update } from "./logic/index.ts";
+import { createInitialState, update, type GameActions } from "./logic/index.ts";
+import { createInputController } from "./input/index.ts";
 import { PLACEHOLDER_COLOR, render } from "./render/index.ts";
 
 const MAX_DELTA_SECONDS = 0.1;
@@ -15,7 +16,7 @@ export function drawPlaceholder(canvas: HTMLCanvasElement): void {
   render(context, createInitialState());
 }
 
-export function bootGame(documentRoot: Document): void {
+export function bootGame(documentRoot: Document): () => void {
   const canvas = documentRoot.querySelector<HTMLCanvasElement>("#game-canvas");
 
   if (canvas === null) {
@@ -29,7 +30,10 @@ export function bootGame(documentRoot: Document): void {
   }
 
   let state = createInitialState();
+  let paused = false;
   let previousTimestamp: number | undefined;
+  const input = createInputController(documentRoot.defaultView ?? documentRoot);
+  let animationFrame: number | undefined;
 
   const loop = (timestamp: number): void => {
     const deltaSeconds =
@@ -37,12 +41,28 @@ export function bootGame(documentRoot: Document): void {
         ? 0
         : Math.min((timestamp - previousTimestamp) / 1000, MAX_DELTA_SECONDS);
     previousTimestamp = timestamp;
-    state = update(state, deltaSeconds);
+    if (input.consumeActionPress("pause")) {
+      paused = !paused;
+    }
+    const actions: GameActions = {
+      left: input.isActionActive("left"),
+      right: input.isActionActive("right"),
+      jump: input.isActionActive("jump"),
+      pause: paused,
+    };
+    state = update(state, deltaSeconds, actions);
     render(context, state);
-    requestAnimationFrame(loop);
+    animationFrame = requestAnimationFrame(loop);
   };
 
-  requestAnimationFrame(loop);
+  animationFrame = requestAnimationFrame(loop);
+
+  return (): void => {
+    if (animationFrame !== undefined) {
+      cancelAnimationFrame(animationFrame);
+    }
+    input.dispose();
+  };
 }
 
 if (typeof document !== "undefined") {
