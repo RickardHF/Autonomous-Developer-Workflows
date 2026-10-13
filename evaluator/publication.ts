@@ -150,12 +150,22 @@ export async function stagePages(
     output: string,
     repository: string,
     pagesUrl: string,
+    gameDirectory: string,
     services: PublicationServices = {
         api: ghApi, download: (id) => downloadSnapshot(repository, id), fetch, log: console.log,
     },
 ): Promise<EvaluationSnapshot | null> {
     repositoryName.parse(repository);
     if (fs.existsSync(output)) throw new Error("Pages staging directory must be fresh.");
+    const gameBuild = path.resolve(gameDirectory);
+    if (path.resolve(output).startsWith(`${gameBuild}${path.sep}`)) {
+        throw new Error("Pages staging directory must be outside the game build.");
+    }
+    const entry = fs.statSync(path.join(gameBuild, "index.html"), { throwIfNoEntry: false });
+    if (!entry?.isFile() || entry.size === 0) throw new Error("Game build must contain a nonempty index.html.");
+    if (fs.existsSync(path.join(gameBuild, "evaluation"))) {
+        throw new Error("Game build must not contain the reserved evaluation directory.");
+    }
     const base = new URL(`${pagesUrl.replace(/\/$/, "")}/`);
     if (base.protocol !== "https:") throw new Error("Pages URL must use HTTPS.");
     const history = git(directory, "rev-list", "HEAD").split("\n");
@@ -208,9 +218,8 @@ export async function stagePages(
         break;
     }
 
-    fs.mkdirSync(output, { recursive: true });
-    const archive = execFileSync("git", ["-C", directory, "archive", "HEAD"], { maxBuffer: 128 * 1024 * 1024 });
-    execFileSync("tar", ["-xf", "-", "-C", output], { input: archive });
+    fs.cpSync(gameBuild, output, { recursive: true });
+    fs.writeFileSync(path.join(output, ".nojekyll"), "");
     const evaluationDirectory = path.join(output, "evaluation");
     if (selected) {
         writeSnapshot(selected, evaluationDirectory);
@@ -219,14 +228,14 @@ export async function stagePages(
         fs.mkdirSync(evaluationDirectory, { recursive: true });
         fs.writeFileSync(path.join(evaluationDirectory, "eval-badge.svg"),
             '<svg xmlns="http://www.w3.org/2000/svg" width="620" height="64" role="img" aria-label="No complete evaluation published yet"><rect width="620" height="64" rx="8" fill="#1e2433"/><text x="20" y="38" fill="#c9d1d9" font-family="sans-serif">No complete evaluation published yet</text></svg>\n');
-        services.log("::warning::No complete evaluation is available. Staged the workshop with an explicit pending-evaluation image.");
+        services.log("::warning::No complete evaluation is available. Staged the game with an explicit pending-evaluation image.");
     }
     if (process.env.GITHUB_STEP_SUMMARY) {
         fs.appendFileSync(process.env.GITHUB_STEP_SUMMARY,
-            `## Workshop and evaluation publication\n\nSite source: \`${history[0]}\`.\n\n` +
+            `## Game and evaluation publication\n\nSite source: \`${history[0]}\`.\n\n` +
             (selected ? `Latest complete evaluation: \`${selected.sourceSha}\` ([run](${process.env.GITHUB_SERVER_URL ?? "https://github.com"}/${repository}/actions/runs/${selected.runId})).\n\n`
                 : "**No complete evaluation published yet.**\n\n") +
-            `[View SVG](${new URL("evaluation/eval-badge.svg", base)}) | [Workshop](${new URL("learn/", base)})\n`);
+            `[View SVG](${new URL("evaluation/eval-badge.svg", base)}) | [Play game](${base})\n`);
     }
     return selected;
 }
@@ -236,7 +245,7 @@ async function main() {
         allowPositionals: true,
         options: {
             directory: { type: "string" }, input: { type: "string" },
-            output: { type: "string" }, "pages-url": { type: "string" },
+            output: { type: "string" }, "pages-url": { type: "string" }, "game-directory": { type: "string" },
         },
     });
     const required = (name: keyof typeof values) => {
@@ -260,7 +269,7 @@ async function main() {
         writeSnapshot(snapshot, output);
         console.log(`Complete evaluation: ${snapshot.results.length} definitions at ${snapshot.sourceSha}.`);
     } else if (positionals[0] === "stage") {
-        await stagePages(directory, output, repository, required("pages-url"));
+        await stagePages(directory, output, repository, required("pages-url"), path.resolve(required("game-directory")));
     } else {
         throw new Error("Use bundle or stage.");
     }

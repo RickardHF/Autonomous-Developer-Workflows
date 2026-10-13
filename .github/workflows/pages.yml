@@ -1,4 +1,4 @@
-name: Publish Workshop & Evaluation
+name: Publish Game & Evaluation
 
 on:
   push:
@@ -10,6 +10,7 @@ on:
   workflow_dispatch:
 
 concurrency:
+  # Share the deployment lock with the previous workshop publisher during the cutover.
   group: workshop-pages
   cancel-in-progress: false
 
@@ -40,17 +41,27 @@ jobs:
         with:
           node-version: "24"
           cache: "npm"
-          cache-dependency-path: evaluator/package-lock.json
+          cache-dependency-path: |
+            evaluator/package-lock.json
+            game/package-lock.json
 
       - name: Install publishing dependencies
         working-directory: evaluator
         run: npm ci
 
+      - name: Install game dependencies
+        working-directory: game
+        run: npm ci
+
+      - name: Build the game
+        working-directory: game
+        run: npm run build
+
       - name: Configure GitHub Pages
         id: pages
         uses: actions/configure-pages@v5
 
-      - name: Stage the workshop and latest complete main evaluation
+      - name: Stage the game and latest complete main evaluation
         working-directory: evaluator
         env:
           GH_TOKEN: ${{ github.token }}
@@ -58,13 +69,14 @@ jobs:
         run: |
           npx tsx publication.ts stage \
             --directory "$GITHUB_WORKSPACE" \
-            --output "$RUNNER_TEMP/workshop-pages" \
+            --game-directory "$GITHUB_WORKSPACE/game/dist" \
+            --output "$RUNNER_TEMP/game-pages" \
             --pages-url "$PAGES_URL"
 
       - name: Upload the complete Pages site
         uses: actions/upload-pages-artifact@v4
         with:
-          path: ${{ runner.temp }}/workshop-pages
+          path: ${{ runner.temp }}/game-pages
 
   deploy:
     needs: build
@@ -76,6 +88,6 @@ jobs:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
-      - name: Deploy the workshop and evaluation together
+      - name: Deploy the game and evaluation together
         id: deployment
         uses: actions/deploy-pages@v4

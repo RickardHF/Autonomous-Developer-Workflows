@@ -27,11 +27,14 @@ function fixture(context: TestContext) {
     const root = fs.mkdtempSync(path.join(os.tmpdir(), "evaluation-publication-"));
     context.after(() => fs.rmSync(root, { recursive: true, force: true }));
     const source = path.join(root, "source");
+    const gameDirectory = path.join(root, "game-dist");
     fs.mkdirSync(source);
-    const write = (file: string, content: string) => {
-        fs.mkdirSync(path.dirname(path.join(source, file)), { recursive: true });
-        fs.writeFileSync(path.join(source, file), content);
+    const writeAt = (directory: string, file: string, content: string) => {
+        fs.mkdirSync(path.dirname(path.join(directory, file)), { recursive: true });
+        fs.writeFileSync(path.join(directory, file), content);
     };
+    const write = (file: string, content: string) => writeAt(source, file, content);
+    const writeGame = (file: string, content: string) => writeAt(gameDirectory, file, content);
     git(source, "init", "--quiet", "--initial-branch=main");
     git(source, "config", "user.name", "Publication fixture");
     git(source, "config", "user.email", "fixture@example.invalid");
@@ -47,6 +50,12 @@ function fixture(context: TestContext) {
     write("exercises/fixture.md", "# Exercise fixture\n");
     write("learn/assets/fixture.png", "Fixture image bytes");
     write("eval-badge.svg", "<svg>Old tracked image, not a publication</svg>");
+    write("game/index.html", '<script type="module" src="/src/main.ts"></script>');
+    write("evaluator/fixture.ts", "// Evaluator source must not be published\n");
+    writeGame("index.html", '<title>McSquishy fixture</title><link rel="icon" href="./favicon.svg"><link rel="stylesheet" href="./assets/game.css"><canvas id="game-canvas"></canvas><script type="module" src="./assets/game.js"></script>');
+    writeGame("assets/game.js", 'document.querySelector("#game-canvas");\n');
+    writeGame("assets/game.css", "canvas { width: 100%; }\n");
+    writeGame("favicon.svg", '<svg xmlns="http://www.w3.org/2000/svg"></svg>\n');
     const commit = () => {
         git(source, "add", ".");
         git(source, "commit", "--quiet", "-m", "Fixture source");
@@ -59,7 +68,7 @@ function fixture(context: TestContext) {
     const writeResults = (entries: unknown[]) => fs.writeFileSync(input, `${entries.map((entry) => JSON.stringify(entry)).join("\n")}\n`);
     writeResults(results);
     const identity = { repository, sourceSha, sourceRef: "refs/heads/main", runId: 100, runAttempt: 1 };
-    return { root, source, input, files, results, identity, write, commit, writeResults };
+    return { root, source, gameDirectory, input, files, results, identity, write, writeGame, commit, writeResults };
 }
 
 async function snapshot(context: TestContext) {
@@ -102,9 +111,13 @@ function services(
             assert.ok(value);
             return value;
         },
-        fetch: async () => previous
-            ? new Response(JSON.stringify(previous), { status: overrides.httpStatus ?? 200 })
-            : new Response("Not found", { status: overrides.httpStatus ?? 404 }),
+        fetch: async (url: Parameters<typeof fetch>[0]) => {
+            assert.ok(url instanceof URL);
+            calls.push(`fetch:${url.pathname}`);
+            return previous
+                ? new Response(JSON.stringify(previous), { status: overrides.httpStatus ?? 200 })
+                : new Response("Not found", { status: overrides.httpStatus ?? 404 });
+        },
         log(message: string) { logs.push(message); },
     };
 }
@@ -173,27 +186,36 @@ test("newer source commits win over late older runs, and run/attempt ordering br
     assert.throws(() => newerSnapshot(null, { ...next, sourceSha: "0".repeat(40) }, history), /ancestor/);
 });
 
-test("initial publication preserves the entire tracked workshop and overlays complete results without branch writes", async (context) => {
+test("initial publication stages only the built game and complete evaluations without branch writes", async (context) => {
     const f = await snapshot(context);
     fs.mkdirSync(path.join(f.source, "node_modules"));
     fs.writeFileSync(path.join(f.source, "node_modules", "untracked"), "Must not be published");
     const output = path.join(f.root, "site");
     const io = services(null, [f.value]);
-    assert.deepEqual(await stagePages(f.source, output, repository, pagesUrl, io), f.value);
-    for (const file of [".nojekyll", "index.html", "README.md", "learn/index.html", "learn/manifest.json",
-        "exercises/fixture.md", "learn/assets/fixture.png"]) {
-        assert.equal(fs.readFileSync(path.join(output, file), "utf8"), fs.readFileSync(path.join(f.source, file), "utf8"));
+    assert.deepEqual(await stagePages(f.source, output, repository, pagesUrl, f.gameDirectory, io), f.value);
+    assert.deepEqual(fs.readdirSync(output).sort(), [".nojekyll", "assets", "evaluation", "favicon.svg", "index.html"]);
+    assert.equal(fs.readFileSync(path.join(output, ".nojekyll"), "utf8"), "");
+    for (const file of ["index.html", "assets/game.js", "assets/game.css", "favicon.svg"]) {
+        assert.equal(fs.readFileSync(path.join(output, file), "utf8"), fs.readFileSync(path.join(f.gameDirectory, file), "utf8"));
     }
-    assert.ok(!fs.existsSync(path.join(output, ".git")));
-    assert.ok(!fs.existsSync(path.join(output, "node_modules")));
+    for (const file of [".git", ".github", ".agents", ".claude", "node_modules", "README.md", "learn",
+        "exercises", "game", "evaluator", "eval-badge.svg"]) {
+        assert.ok(!fs.existsSync(path.join(output, file)), `${file} must not be published`);
+    }
+    assert.ok(io.calls.includes("fetch:/workshop/evaluation/snapshot.json"));
     assert.equal(fs.readFileSync(path.join(output, "evaluation/eval-badge.svg"), "utf8"), f.value.svg);
+    assert.deepEqual(JSON.parse(fs.readFileSync(path.join(output, "evaluation/snapshot.json"), "utf8")), f.value);
+    assert.equal(fs.readFileSync(path.join(output, "evaluation/results.jsonl"), "utf8"),
+        `${f.value.results.map((result) => JSON.stringify(result)).join("\n")}\n`);
     assert.equal(git(f.source, "rev-parse", "HEAD"), f.identity.sourceSha);
     assert.deepEqual(git(f.source, "for-each-ref", "--format=%(refname)").split("\n"), ["refs/heads/main"]);
 });
 
-test("site-only updates retain the durable published evaluation after artifact expiration or failed evaluation", async (context) => {
+test("game-only updates retain all published evaluation data after artifact expiration or failed evaluation", async (context) => {
     const f = await snapshot(context);
-    f.write("README.md", "# Updated without a new complete evaluation\n");
+    f.write("game/index.html", "<main>Updated game source</main>");
+    f.writeGame("index.html", "<main>Updated McSquishy without a new complete evaluation</main>");
+    f.writeGame("assets/game.js", "// Updated game bundle\n");
     const nextSha = f.commit();
     const next = await createSnapshot(f.source, f.input, { ...f.identity, sourceSha: nextSha, runId: 101 });
     for (const [name, candidates, options] of [
@@ -202,9 +224,14 @@ test("site-only updates retain the durable published evaluation after artifact e
     ] as const) {
         const io = services(f.value, [...candidates], options);
         const output = path.join(f.root, name);
-        assert.deepEqual(await stagePages(f.source, output, repository, pagesUrl, io), f.value);
-        assert.match(fs.readFileSync(path.join(output, "README.md"), "utf8"), /Updated without/);
+        assert.deepEqual(await stagePages(f.source, output, repository, pagesUrl, f.gameDirectory, io), f.value);
+        assert.match(fs.readFileSync(path.join(output, "index.html"), "utf8"), /Updated McSquishy/);
+        assert.equal(fs.readFileSync(path.join(output, "assets/game.js"), "utf8"), "// Updated game bundle\n");
         assert.equal(fs.readFileSync(path.join(output, "evaluation/eval-badge.svg"), "utf8"), f.value.svg);
+        assert.deepEqual(JSON.parse(fs.readFileSync(path.join(output, "evaluation/snapshot.json"), "utf8")), f.value);
+        assert.equal(fs.readFileSync(path.join(output, "evaluation/results.jsonl"), "utf8"),
+            `${f.value.results.map((result) => JSON.stringify(result)).join("\n")}\n`);
+        assert.ok(!fs.existsSync(path.join(output, "learn")));
         assert.ok(!io.calls.some((call) => call.startsWith("download:")));
     }
 });
@@ -223,18 +250,21 @@ test("successful evaluation discovery is paginated rather than restricted to the
                 : [runFor(f.value)],
         };
     };
-    assert.deepEqual(await stagePages(f.source, path.join(f.root, "site"), repository, pagesUrl, io), f.value);
+    assert.deepEqual(await stagePages(f.source, path.join(f.root, "site"), repository, pagesUrl, f.gameDirectory, io), f.value);
     assert.equal(io.calls.filter((call) => call.includes("/workflows/evaluate.yml/runs?")).length, 2);
 });
 
 test("publication selects the newest eligible main source, not the most recently completed older run", async (context) => {
     const f = await snapshot(context);
-    f.write("README.md", "# Main advanced\n");
+    f.write("game/index.html", "<main>Main game source advanced</main>");
+    f.writeGame("index.html", "<main>Current main McSquishy</main>");
     const nextSha = f.commit();
     const next = await createSnapshot(f.source, f.input, { ...f.identity, sourceSha: nextSha, runId: 101 });
     const lateOld = { ...f.value, runId: 999 };
     const io = services(f.value, [lateOld, next]);
-    assert.deepEqual(await stagePages(f.source, path.join(f.root, "site"), repository, pagesUrl, io), next);
+    const output = path.join(f.root, "site");
+    assert.deepEqual(await stagePages(f.source, output, repository, pagesUrl, f.gameDirectory, io), next);
+    assert.equal(fs.readFileSync(path.join(output, "index.html"), "utf8"), "<main>Current main McSquishy</main>");
     assert.deepEqual(io.calls.filter((call) => call.startsWith("download:")), ["download:101"]);
 });
 
@@ -242,7 +272,7 @@ test("a newer published snapshot cannot be overwritten by an old completion or l
     const f = await snapshot(context);
     const latest = { ...f.value, runAttempt: 2 };
     const io = services(latest, [f.value]);
-    assert.deepEqual(await stagePages(f.source, path.join(f.root, "site"), repository, pagesUrl, io), latest);
+    assert.deepEqual(await stagePages(f.source, path.join(f.root, "site"), repository, pagesUrl, f.gameDirectory, io), latest);
     assert.ok(!io.calls.some((call) => call.startsWith("download:")));
 });
 
@@ -255,8 +285,10 @@ test("failed, cancelled, non-main, fork and unrelated-source runs cannot supply 
         { ...run, event: "pull_request" }, { ...run, head_sha: "0".repeat(40) },
     ] });
     const output = path.join(f.root, "site");
-    assert.equal(await stagePages(f.source, output, repository, pagesUrl, io), null);
+    assert.equal(await stagePages(f.source, output, repository, pagesUrl, f.gameDirectory, io), null);
+    assert.match(fs.readFileSync(path.join(output, "index.html"), "utf8"), /McSquishy fixture/);
     assert.match(fs.readFileSync(path.join(output, "evaluation/eval-badge.svg"), "utf8"), /No complete evaluation published yet/);
+    assert.deepEqual(fs.readdirSync(path.join(output, "evaluation")), ["eval-badge.svg"]);
     assert.ok(!fs.existsSync(path.join(output, "evaluation/snapshot.json")));
     assert.ok(io.logs.some((message) => message.startsWith("::warning::")));
 });
@@ -272,9 +304,63 @@ test("HTTP, invalid snapshot, API, and artifact identity failures are explicit a
     ];
     for (const [index, io] of cases.entries()) {
         const output = path.join(f.root, `failed-${index}`);
-        await assert.rejects(stagePages(f.source, output, repository, pagesUrl, io));
+        await assert.rejects(stagePages(f.source, output, repository, pagesUrl, f.gameDirectory, io));
         assert.ok(!fs.existsSync(output));
     }
+});
+
+test("missing, empty, and directory game entry points fail before evaluation requests or staging", async (context) => {
+    const f = await snapshot(context);
+    const emptyGame = path.join(f.root, "empty-game");
+    const directoryEntry = path.join(f.root, "directory-entry");
+    const emptyEntry = path.join(f.root, "empty-entry");
+    fs.mkdirSync(emptyGame);
+    fs.mkdirSync(path.join(directoryEntry, "index.html"), { recursive: true });
+    fs.mkdirSync(emptyEntry);
+    fs.writeFileSync(path.join(emptyEntry, "index.html"), "");
+    for (const [index, gameDirectory] of [path.join(f.root, "missing-game"), emptyGame, directoryEntry, emptyEntry].entries()) {
+        const io = services(f.value, []);
+        const output = path.join(f.root, `invalid-game-${index}`);
+        await assert.rejects(stagePages(f.source, output, repository, pagesUrl, gameDirectory, io), /nonempty index.html/);
+        assert.ok(!fs.existsSync(output));
+        assert.deepEqual(io.calls, []);
+    }
+});
+
+test("staging rejects existing outputs, recursive destinations and game-supplied evaluation data", async (context) => {
+    const f = await snapshot(context);
+    const output = path.join(f.root, "site");
+    const io = services(f.value, []);
+    fs.mkdirSync(output);
+    fs.writeFileSync(path.join(output, "sentinel"), "Do not replace existing output");
+    await assert.rejects(stagePages(f.source, output, repository, pagesUrl, f.gameDirectory, io), /must be fresh/);
+    assert.equal(fs.readFileSync(path.join(output, "sentinel"), "utf8"), "Do not replace existing output");
+    const recursive = path.join(f.gameDirectory, "site");
+    await assert.rejects(stagePages(f.source, recursive, repository, pagesUrl, f.gameDirectory, io), /outside the game build/);
+    assert.ok(!fs.existsSync(recursive));
+    f.writeGame("evaluation/snapshot.json", '{"unexpected":"game-supplied snapshot"}');
+    const reserved = path.join(f.root, "reserved");
+    await assert.rejects(stagePages(f.source, reserved, repository, pagesUrl, f.gameDirectory, io), /reserved evaluation directory/);
+    assert.ok(!fs.existsSync(reserved));
+    assert.deepEqual(io.calls, []);
+});
+
+test("publication summaries link to the game root and the unchanged evaluation viewer", async (context) => {
+    const f = await snapshot(context);
+    const summary = path.join(f.root, "summary.md");
+    const previous = process.env.GITHUB_STEP_SUMMARY;
+    process.env.GITHUB_STEP_SUMMARY = summary;
+    context.after(() => {
+        if (previous === undefined) delete process.env.GITHUB_STEP_SUMMARY;
+        else process.env.GITHUB_STEP_SUMMARY = previous;
+    });
+    await stagePages(f.source, path.join(f.root, "site"), repository, pagesUrl, f.gameDirectory, services(null, [f.value]));
+    const markdown = fs.readFileSync(summary, "utf8");
+    assert.match(markdown, /## Game and evaluation publication/);
+    assert.ok(markdown.includes(`[Play game](${pagesUrl})`));
+    assert.ok(markdown.includes(`[View SVG](${pagesUrl}evaluation/eval-badge.svg)`));
+    assert.ok(markdown.includes(f.value.sourceSha));
+    assert.doesNotMatch(markdown, /Workshop|learn\//);
 });
 
 test("the workflow bundle command fails partial successful-process output rather than reusing the tracked SVG", async (context) => {
@@ -302,11 +388,12 @@ test("Pages workflow publishes independently of evaluation, serializes deploymen
     const document = parseDocument(fs.readFileSync(workflowPath, "utf8"));
     assert.deepEqual(document.errors, []);
     const workflow = document.toJS();
+    assert.equal(workflow.name, "Publish Game & Evaluation");
     assert.deepEqual(workflow.on.push, { branches: ["main"] });
     assert.deepEqual(workflow.on.workflow_run, {
         workflows: ["Evaluate Agents & Skills"], types: ["completed"], branches: ["main"],
     });
-    assert.equal(workflow.concurrency["cancel-in-progress"], false);
+    assert.deepEqual(workflow.concurrency, { group: "workshop-pages", "cancel-in-progress": false });
     assert.deepEqual(workflow.permissions, {});
     assert.deepEqual(workflow.jobs.build.permissions, { contents: "read", actions: "read", pages: "read" });
     assert.deepEqual(workflow.jobs.deploy.permissions, { pages: "write", "id-token": "write" });
@@ -318,7 +405,31 @@ test("Pages workflow publishes independently of evaluation, serializes deploymen
     assert.deepEqual(steps.find((step: { uses?: string }) => step.uses === "actions/checkout@v7").with, {
         ref: "main", "fetch-depth": 0, "persist-credentials": false,
     });
-    assert.ok(steps.some((step: { uses?: string }) => step.uses === "actions/upload-pages-artifact@v4"));
+    const node = steps.find((step: { uses?: string }) => step.uses === "actions/setup-node@v7");
+    assert.equal(node.with["node-version"], "24");
+    assert.deepEqual(node.with["cache-dependency-path"].trim().split("\n"),
+        ["evaluator/package-lock.json", "game/package-lock.json"]);
+    const publishingInstall = steps.find((step: { name: string }) => step.name === "Install publishing dependencies");
+    const gameInstall = steps.find((step: { name: string }) => step.name === "Install game dependencies");
+    const gameBuild = steps.find((step: { name: string }) => step.name === "Build the game");
+    const stage = steps.find((step: { name: string }) => step.name === "Stage the game and latest complete main evaluation");
+    const upload = steps.find((step: { uses?: string }) => step.uses === "actions/upload-pages-artifact@v4");
+    assert.equal(publishingInstall["working-directory"], "evaluator");
+    assert.equal(publishingInstall.run, "npm ci");
+    assert.equal(gameInstall["working-directory"], "game");
+    assert.equal(gameInstall.run, "npm ci");
+    assert.equal(gameBuild["working-directory"], "game");
+    assert.equal(gameBuild.run, "npm run build");
+    assert.equal(stage["working-directory"], "evaluator");
+    assert.match(stage.run, /publication\.ts stage/);
+    assert.match(stage.run, /--game-directory "\$GITHUB_WORKSPACE\/game\/dist"/);
+    assert.match(stage.run, /--output "\$RUNNER_TEMP\/game-pages"/);
+    assert.match(stage.run, /--pages-url "\$PAGES_URL"/);
+    assert.equal(upload.with.path, "${{ runner.temp }}/game-pages");
+    assert.ok(steps.indexOf(publishingInstall) < steps.indexOf(stage));
+    assert.ok(steps.indexOf(gameInstall) < steps.indexOf(gameBuild));
+    assert.ok(steps.indexOf(gameBuild) < steps.indexOf(stage));
+    assert.ok(steps.indexOf(stage) < steps.indexOf(upload));
     for (const step of steps.filter((step: { run?: string }) => step.run)) {
         assert.doesNotMatch(step.run, /git\s+(?:commit|push)|cli.ts evaluate/);
         assert.equal(spawnSync("bash", ["-n"], { input: step.run }).status, 0);

@@ -6,6 +6,9 @@ The first part covers core concepts like creation of custom agents, skills, impo
 
 The second part covers more concepts in how to evaluate and how to orchestrate agents.
 
+GitHub Pages hosts the [McSquishy game preview](https://rickardhf.github.io/Autonomous-Developer-Workflows/).
+The workshop exercise browser remains available locally, but is not published on Pages.
+
 ## Workshops
 
 ### GitHub Copilot Customization 101
@@ -29,7 +32,10 @@ The [Evaluate Agents & Skills](https://github.com/RickardHF/Autonomous-Developer
 workflow evaluates every push to `main`. GitHub Pages automatically displays the latest
 **complete** evaluation above, labeled with its evaluated commit; no download or generated
 Git commit is needed. Failed or incomplete evaluations leave the last complete image visible.
-The workshop site updates independently. See
+The game site updates independently, carrying forward the latest complete evaluation even after
+its Actions artifact expires. Run-specific results and diagnostics remain in Actions artifacts,
+subject to their retention period; Pages preserves the latest complete result, not permanent
+per-run history. See
 [automatic evaluation publishing](./docs/evaluator.md#automatic-evaluation-publishing).
 
 The [PR regression check](https://github.com/RickardHF/Autonomous-Developer-Workflows/actions/workflows/evaluation-regression.yml) evaluates changed
@@ -55,7 +61,7 @@ on `main` after publishing the workflow.
 - [ ] In `Settings` → `Actions` → `General`, enable
       **Allow GitHub Actions to create and approve pull requests**, then save.
 - [ ] In `Settings` → `Pages`, set **Source** to **GitHub Actions**. In a template copy,
-      update the evaluation image/viewer URLs and Actions workflow links in `README.md`
+      update the game and evaluation image/viewer URLs and Actions workflow links in `README.md`
       and `docs/evaluator.md` to your own repository's Pages and Actions URLs; see
       [Pages setup](./docs/evaluator.md#pages-setup-and-recovery).
 
@@ -80,10 +86,9 @@ The exercises are in [GitHub Copilot Customization 101](./exercises/GitHub%20Cop
 and [Agentic Workflows & Evaluation](./exercises/Agentic%20Workflows%20%26%20Evaluation/).
 The workshops are independent; your instructor will tell you which one to use.
 
-Use the
-[hosted workshop exercise browser](https://eficodedemoorg.github.io/Agent-Orchestration-and-Evaluation-Workshop/)
-for a visual, self-paced interface. For local use, serve the repository over HTTP and open
+For a visual, self-paced interface, serve the repository locally over HTTP and open
 `/learn/`; see the [workshop exercise browser README](./learn/README.md) for setup details.
+The Pages deployment does not include the workshop dashboard or exercise files.
 
 ## Repository content
 
@@ -139,6 +144,11 @@ npm run build
 npm run test
 npm run typecheck
 ```
+
+The [Pages workflow](./.github/workflows/pages.yml) builds `game/dist` and publishes it
+at the [site root](https://rickardhf.github.io/Autonomous-Developer-Workflows/), alongside
+the evaluation files under `/evaluation/`. Production asset URLs are relative, so the
+same build works beneath a repository Pages path or at a custom-domain root.
 
 The default keyboard controls are documented in [`docs/CONTROLS.md`](./docs/CONTROLS.md).
 
