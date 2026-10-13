@@ -835,7 +835,13 @@ test("merge permissions, checkout, artifacts, and post-merge steps are isolated 
   const job = workflow.jobs.merge;
   assert.equal(job.needs, "classify");
   assert.match(job.if, /needs.classify.result == 'success'.*needs.classify.outputs.trivial == 'true'/);
-  assert.deepEqual(job.permissions, { contents: "write", "pull-requests": "write", actions: "write" });
+  assert.deepEqual(job.permissions, {
+    actions: "write",
+    checks: "read",
+    contents: "write",
+    "pull-requests": "write",
+    statuses: "read",
+  });
   const checkout = job.steps.find((step) => step.uses === "actions/checkout@v7");
   assert.equal(checkout.with.ref, "${{ needs.classify.outputs.base_sha }}");
   assert.equal(checkout.with["persist-credentials"], false);
