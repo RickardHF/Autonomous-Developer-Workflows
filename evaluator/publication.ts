@@ -158,7 +158,9 @@ export async function stagePages(
     repositoryName.parse(repository);
     if (fs.existsSync(output)) throw new Error("Pages staging directory must be fresh.");
     const gameBuild = path.resolve(gameDirectory);
-    if (path.resolve(output).startsWith(`${gameBuild}${path.sep}`)) {
+    const resolvedOutput = path.resolve(output);
+    const relativeOutput = path.relative(gameBuild, resolvedOutput);
+    if (relativeOutput !== "" && !relativeOutput.startsWith("..") && !path.isAbsolute(relativeOutput)) {
         throw new Error("Pages staging directory must be outside the game build.");
     }
     const entry = fs.statSync(path.join(gameBuild, "index.html"), { throwIfNoEntry: false });
