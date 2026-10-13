@@ -275,6 +275,9 @@ describe("canvas sizing", () => {
     );
     expect(pauseButton.textContent).toBe("Resume animation");
     expect(pauseButton.setAttribute).toHaveBeenLastCalledWith("aria-pressed", "true");
+    const pausedRenderCount = vi.mocked(render).mock.calls.length;
+    frame(1100);
+    expect(render).toHaveBeenCalledTimes(pausedRenderCount);
 
     clickPause();
     expect(pauseButton.textContent).toBe("Pause animation");

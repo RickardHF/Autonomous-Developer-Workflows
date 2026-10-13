@@ -98,8 +98,11 @@ export function bootGame(documentRoot: Document): () => void {
       jump: input.isActionActive("jump"),
       pause: paused,
     };
+    const wasPaused = state.paused;
     state = update(state, deltaSeconds, actions);
-    draw();
+    if (!(wasPaused && state.paused)) {
+      draw();
+    }
     frameId = windowRoot.requestAnimationFrame(loop);
   };
 
