@@ -6,12 +6,22 @@ player, level, hazard, rendering, and game-state work.
 
 ## Visual style and squash-and-stretch
 
-McSquishy uses a cartoonish, playful visual style with colourful, simple
-shape/vector-style placeholder art. The presentation should remain light,
-approachable, and slightly absurd rather than aiming for realism or detailed
-art assets.
+McSquishy uses a polished, cartoonish, playful visual style with original
+vector-style artwork. The surrounding UI pairs warm cream and deep ink with
+coral, lilac, and mint accents, rounded framing, and generous spacing. The
+illustrated world uses layered pastel hills, soft clouds, and botanical
+details; McSquishy is an expressive coral jelly blob with glossy highlights
+and a soft shadow. The presentation remains light, approachable, and slightly
+absurd rather than aiming for realism or externally sourced art assets.
 
-McSquishy is rendered as a jelly-like blob with visible squash-and-stretch
+The current application is an animated art preview, not yet a playable level.
+Its automatic movement is unchanged by the visual redesign. Decorative
+bobbing, squash, blinking, and cloud drift respect reduced-motion preferences;
+the existing horizontal movement demo continues. Artwork and styling are
+local, and the canvas retains an 800-by-450 logical coordinate system
+independent of responsive layout and display pixel density.
+
+When gameplay is implemented, McSquishy should have visible squash-and-stretch
 reactions:
 
 - On jump launch, stretch vertically and narrow horizontally.

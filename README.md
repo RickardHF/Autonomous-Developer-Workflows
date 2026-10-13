@@ -126,9 +126,9 @@ See the [evaluator documentation](./docs/evaluator.md) for usage, arguments, eva
 The `src/` folder currently contains the description, functional requirements, and technical
 requirements for the workshop's example application.
 
-## McSquishy game scaffold
+## McSquishy game preview
 
-The browser-only McSquishy game scaffold lives in [`game/`](./game/). From the repository root,
+The browser-only McSquishy game preview lives in [`game/`](./game/). From the repository root,
 run these commands inside that directory:
 
 ```sh
@@ -140,5 +140,15 @@ npm run test
 npm run typecheck
 ```
 
-The Vite development server serves a placeholder canvas. Vitest runs the smoke test in a
-Node environment, so the scaffold has no backend or browser automation dependency.
+The Vite development server serves a responsive, cream-and-ink page with an illustrated
+pastel meadow and an expressive coral jelly blob. All artwork, styling, and fonts are
+local or browser-provided; no backend or network assets are required. The canvas uses
+an 800-by-450 logical scene with a backing buffer sized for the display's pixel density.
+
+This is an **animated art preview**, not yet a playable platformer. McSquishy moves
+automatically; keyboard input, collision, lives, and playable levels are not implemented.
+Reduced-motion preferences disable new decorative bobbing, squash, blinking, cloud drift,
+and UI effects while retaining the original movement demo.
+
+Vitest runs rendering, preview lifecycle, canvas-sizing, and deterministic movement tests
+in a Node environment, with no browser automation dependency.
