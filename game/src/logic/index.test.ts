@@ -60,6 +60,37 @@ describe("game update", () => {
     expect(movingBoth.shapeX).toBe(360);
   });
 
+  it.each([
+    { direction: "left", boundary: 80, velocity: -80 },
+    { direction: "right", boundary: 720, velocity: 80 },
+  ])("clamps held $direction input without boundary jitter", ({ direction, boundary, velocity }) => {
+    const actions = {
+      left: direction === "left",
+      right: direction === "right",
+      jump: false,
+      pause: false,
+    };
+    let state = update(createInitialState(), 5, actions);
+
+    for (let frame = 0; frame < 5; frame += 1) {
+      expect(state.shapeX).toBe(boundary);
+      expect(state.velocityX).toBe(velocity);
+      state = update(state, 0.1, actions);
+    }
+
+    const reversed = update(state, 0.1, {
+      ...actions,
+      left: !actions.left,
+      right: !actions.right,
+    });
+    expect(reversed.shapeX).toBe(boundary - velocity * 0.1);
+    expect(reversed.velocityX).toBe(-velocity);
+
+    const released = update(state, 0.1);
+    expect(released.shapeX).toBe(boundary - velocity * 0.1);
+    expect(released.velocityX).toBe(-velocity);
+  });
+
   it("propagates jump input to the updated state", () => {
     const state = update(createInitialState(), 0.25, {
       left: false,

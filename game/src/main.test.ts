@@ -3,6 +3,18 @@ import * as logic from "./logic/index.ts";
 import { bootGame, PLACEHOLDER_COLOR } from "./main.ts";
 import * as renderer from "./render/index.ts";
 
+function dispatchKey(
+  target: EventTarget,
+  type: "keydown" | "keyup",
+  code: string,
+  repeat = false,
+): void {
+  const event = new Event(type);
+  Object.defineProperty(event, "code", { value: code });
+  Object.defineProperty(event, "repeat", { value: repeat });
+  target.dispatchEvent(event);
+}
+
 afterEach(() => {
   vi.restoreAllMocks();
   vi.unstubAllGlobals();
@@ -49,12 +61,8 @@ describe("game scaffold", () => {
     const dispose = bootGame(documentRoot);
     callbacks.get(1)?.(1000);
 
-    const rightDown = new Event("keydown");
-    Object.defineProperty(rightDown, "code", { value: "ArrowRight" });
-    target.dispatchEvent(rightDown);
-    const jumpDown = new Event("keydown");
-    Object.defineProperty(jumpDown, "code", { value: "Space" });
-    target.dispatchEvent(jumpDown);
+    dispatchKey(target, "keydown", "ArrowRight");
+    dispatchKey(target, "keydown", "Space");
     callbacks.get(2)?.(1050);
 
     expect(update).toHaveBeenLastCalledWith(
@@ -67,10 +75,58 @@ describe("game scaffold", () => {
       expect.objectContaining({ shapeX: 404, jumpRequested: true }),
     );
 
+    dispatchKey(target, "keydown", "KeyP");
+    callbacks.get(3)?.(1100);
+    expect(render).toHaveBeenLastCalledWith(
+      context,
+      expect.objectContaining({ shapeX: 404, elapsed: 0.05, paused: true }),
+    );
+
+    dispatchKey(target, "keydown", "KeyP", true);
+    callbacks.get(4)?.(1150);
+    expect(render).toHaveBeenLastCalledWith(
+      context,
+      expect.objectContaining({ shapeX: 404, elapsed: 0.05, paused: true }),
+    );
+
+    dispatchKey(target, "keyup", "KeyP");
+    callbacks.get(5)?.(1200);
+    expect(render).toHaveBeenLastCalledWith(
+      context,
+      expect.objectContaining({ shapeX: 404, elapsed: 0.05, paused: true }),
+    );
+
+    target.dispatchEvent(new Event("blur"));
+    dispatchKey(target, "keydown", "KeyP");
+    dispatchKey(target, "keyup", "KeyP");
+    callbacks.get(6)?.(1250);
+    expect(update).toHaveBeenLastCalledWith(
+      expect.objectContaining({ paused: true }),
+      0.05,
+      { left: false, right: false, jump: false, pause: false },
+    );
+    expect(render).toHaveBeenLastCalledWith(
+      context,
+      expect.objectContaining({
+        shapeX: 408,
+        elapsed: 0.1,
+        jumpRequested: false,
+        paused: false,
+      }),
+    );
+
+    dispatchKey(target, "keydown", "ArrowLeft");
+    callbacks.get(7)?.(1300);
+    expect(render).toHaveBeenLastCalledWith(
+      context,
+      expect.objectContaining({ shapeX: 404, velocityX: -80 }),
+    );
+
     dispose();
 
-    expect(cancelFrame).toHaveBeenCalledWith(3);
+    expect(cancelFrame).toHaveBeenCalledWith(8);
     expect(removeListener).toHaveBeenCalledWith("keydown", expect.any(Function));
     expect(removeListener).toHaveBeenCalledWith("keyup", expect.any(Function));
+    expect(removeListener).toHaveBeenCalledWith("blur", expect.any(Function));
   });
 });

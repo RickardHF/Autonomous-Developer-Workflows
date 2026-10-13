@@ -56,13 +56,17 @@ export function update(
   let shapeX = state.shapeX + inputVelocity * deltaSeconds;
   let velocityX = inputVelocity;
 
-  while (shapeX > SHAPE_MAX_X || shapeX < SHAPE_MIN_X) {
-    if (shapeX > SHAPE_MAX_X) {
-      shapeX = SHAPE_MAX_X - (shapeX - SHAPE_MAX_X);
-      velocityX = -Math.abs(velocityX);
-    } else {
-      shapeX = SHAPE_MIN_X + (SHAPE_MIN_X - shapeX);
-      velocityX = Math.abs(velocityX);
+  if (actions.left !== actions.right) {
+    shapeX = Math.max(SHAPE_MIN_X, Math.min(SHAPE_MAX_X, shapeX));
+  } else {
+    while (shapeX > SHAPE_MAX_X || shapeX < SHAPE_MIN_X) {
+      if (shapeX > SHAPE_MAX_X) {
+        shapeX = SHAPE_MAX_X - (shapeX - SHAPE_MAX_X);
+        velocityX = -Math.abs(velocityX);
+      } else {
+        shapeX = SHAPE_MIN_X + (SHAPE_MIN_X - shapeX);
+        velocityX = Math.abs(velocityX);
+      }
     }
   }
 

@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import {
   createInputController,
   DEFAULT_KEY_BINDINGS,
@@ -9,9 +9,11 @@ function dispatch(
   target: EventTarget,
   type: "keydown" | "keyup",
   code: string,
+  repeat = false,
 ): Event {
   const event = new Event(type, { cancelable: true });
   Object.defineProperty(event, "code", { value: code });
+  Object.defineProperty(event, "repeat", { value: repeat });
   target.dispatchEvent(event);
   return event;
 }
@@ -62,11 +64,64 @@ describe("keyboard input controller", () => {
 
   it("removes listeners when disposed", () => {
     const target = new EventTarget();
+    const removeListener = vi.spyOn(target, "removeEventListener");
     const controller = createInputController(target);
 
+    dispatch(target, "keydown", "KeyP");
     controller.dispose();
     dispatch(target, "keydown", "KeyP");
 
     expect(controller.isActionActive("pause")).toBe(false);
+    expect(controller.consumeActionPress("pause")).toBe(false);
+    for (const type of ["keydown", "keyup", "blur"]) {
+      expect(removeListener).toHaveBeenCalledWith(type, expect.any(Function));
+    }
+    removeListener.mockRestore();
+  });
+
+  it("reports each press once, ignoring held keys and auto-repeat", () => {
+    const target = new EventTarget();
+    const controller = createInputController(target);
+
+    dispatch(target, "keydown", "KeyP");
+    expect(controller.consumeActionPress("pause")).toBe(true);
+    expect(controller.consumeActionPress("pause")).toBe(false);
+
+    dispatch(target, "keydown", "KeyP");
+    dispatch(target, "keydown", "KeyP", true);
+    expect(controller.consumeActionPress("pause")).toBe(false);
+
+    dispatch(target, "keyup", "KeyP");
+    dispatch(target, "keydown", "KeyP");
+    dispatch(target, "keyup", "KeyP");
+    expect(controller.isActionActive("pause")).toBe(false);
+    expect(controller.consumeActionPress("pause")).toBe(true);
+    controller.dispose();
+  });
+
+  it("clears all held keys and pending presses when focus is lost", () => {
+    const target = new EventTarget();
+    const controller = createInputController(target);
+
+    for (const keys of Object.values(DEFAULT_KEY_BINDINGS)) {
+      for (const key of keys) {
+        dispatch(target, "keydown", key);
+      }
+    }
+    target.dispatchEvent(new Event("blur"));
+
+    for (const action of Object.keys(DEFAULT_KEY_BINDINGS) as InputAction[]) {
+      expect(controller.isActionActive(action)).toBe(false);
+      expect(controller.consumeActionPress(action)).toBe(false);
+    }
+
+    dispatch(target, "keydown", "KeyP", true);
+    expect(controller.consumeActionPress("pause")).toBe(false);
+    dispatch(target, "keyup", "KeyP");
+    dispatch(target, "keydown", "KeyP");
+    expect(controller.consumeActionPress("pause")).toBe(true);
+    dispatch(target, "keydown", "ArrowRight");
+    expect(controller.isActionActive("right")).toBe(true);
+    controller.dispose();
   });
 });

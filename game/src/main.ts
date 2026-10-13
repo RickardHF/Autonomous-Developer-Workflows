@@ -30,6 +30,7 @@ export function bootGame(documentRoot: Document): () => void {
   }
 
   let state = createInitialState();
+  let paused = false;
   let previousTimestamp: number | undefined;
   const input = createInputController(documentRoot.defaultView ?? documentRoot);
   let animationFrame: number | undefined;
@@ -40,11 +41,14 @@ export function bootGame(documentRoot: Document): () => void {
         ? 0
         : Math.min((timestamp - previousTimestamp) / 1000, MAX_DELTA_SECONDS);
     previousTimestamp = timestamp;
+    if (input.consumeActionPress("pause")) {
+      paused = !paused;
+    }
     const actions: GameActions = {
       left: input.isActionActive("left"),
       right: input.isActionActive("right"),
       jump: input.isActionActive("jump"),
-      pause: input.isActionActive("pause"),
+      pause: paused,
     };
     state = update(state, deltaSeconds, actions);
     render(context, state);
