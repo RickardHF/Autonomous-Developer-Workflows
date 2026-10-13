@@ -220,6 +220,7 @@ export async function stagePages(
         break;
     }
 
+    fs.mkdirSync(path.dirname(output), { recursive: true });
     fs.cpSync(gameBuild, output, { recursive: true });
     fs.writeFileSync(path.join(output, ".nojekyll"), "");
     const evaluationDirectory = path.join(output, "evaluation");
