@@ -13,7 +13,11 @@ function createBrowser() {
   const bounds = { width: 640, height: 360 };
   let width = 800;
   let height = 450;
+  const canvasHandlers = new Map<string, (event: Event) => void>();
+  const windowHandlers = new Map<string, (event: Event) => void>();
+  let onPauseClick: (() => void) | undefined;
   const element = {
+    tabIndex: 0,
     get width() {
       return width;
     },
@@ -28,9 +32,20 @@ function createBrowser() {
     },
     getContext: vi.fn(() => context),
     getBoundingClientRect: vi.fn(() => bounds),
+    addEventListener: vi.fn((type: string, handler: (event: Event) => void) => {
+      canvasHandlers.set(type, handler);
+    }),
+    removeEventListener: vi.fn(),
   };
   const canvas = element as unknown as HTMLCanvasElement;
-  const handlers = new Map<string, (event: Event) => void>();
+  const pauseButton = {
+    textContent: "Pause animation",
+    addEventListener: vi.fn((_type: string, handler: () => void) => {
+      onPauseClick = handler;
+    }),
+    removeEventListener: vi.fn(),
+    setAttribute: vi.fn(),
+  } as unknown as HTMLButtonElement;
   const preference = { matches: false };
   const requestAnimationFrame = vi.fn((_callback: FrameRequestCallback) => 1);
   const windowRoot = {
@@ -39,15 +54,17 @@ function createBrowser() {
     requestAnimationFrame,
     cancelAnimationFrame: vi.fn(),
     addEventListener: vi.fn((type: string, handler: (event: Event) => void) => {
-      handlers.set(type, handler);
+      windowHandlers.set(type, handler);
     }),
     press(type: "keydown" | "keyup", code: string) {
-      handlers.get(type)?.({ code, repeat: false, preventDefault: vi.fn() } as unknown as Event);
+      windowHandlers.get(type)?.({ code, repeat: false, preventDefault: vi.fn() } as unknown as Event);
     },
     removeEventListener: vi.fn(),
   };
   const root = {
-    querySelector: vi.fn(() => canvas),
+    querySelector: vi.fn((selector: string) =>
+      selector === "#game-canvas" ? canvas : pauseButton,
+    ),
     defaultView: windowRoot,
   };
   const observer = { observe: vi.fn(), disconnect: vi.fn() };
@@ -59,8 +76,12 @@ function createBrowser() {
   vi.stubGlobal("ResizeObserver", ResizeObserverMock);
 
   return {
-    canvas, context, element, bounds, preference, windowRoot, observer,
+    canvas, context, element, bounds, preference, windowRoot, observer, pauseButton,
     documentRoot: root as unknown as Document,
+    pressCanvas(type: "keydown" | "keyup", code: string) {
+      canvasHandlers.get(type)?.({ code, repeat: false, preventDefault: vi.fn() } as unknown as Event);
+    },
+    clickPause: () => onPauseClick?.(),
     triggerResize: () => onResize?.(),
     frame: (timestamp: number) => {
       const callback = requestAnimationFrame.mock.lastCall?.[0];
@@ -89,7 +110,7 @@ describe("game preview", () => {
   });
 
   it("draws immediately at display resolution and observes canvas resizing", () => {
-    const { documentRoot, canvas, context, windowRoot, observer } = createBrowser();
+    const { documentRoot, canvas, context, windowRoot, observer, pauseButton } = createBrowser();
 
     const stop = bootGame(documentRoot);
 
@@ -98,7 +119,10 @@ describe("game preview", () => {
     expect(render).toHaveBeenCalledWith(context, createInitialState(), { reducedMotion: false });
     expect(windowRoot.matchMedia).toHaveBeenCalledWith("(prefers-reduced-motion: reduce)");
     expect(observer.observe).toHaveBeenCalledWith(canvas);
+    expect(canvas.tabIndex).toBe(0);
     expect(windowRoot.addEventListener).toHaveBeenCalledWith("resize", expect.any(Function));
+    expect(windowRoot.addEventListener).not.toHaveBeenCalledWith("keydown", expect.any(Function));
+    expect(pauseButton.textContent).toBe("Pause animation");
     expect(windowRoot.requestAnimationFrame).toHaveBeenCalledOnce();
     stop();
   });
@@ -162,7 +186,7 @@ describe("game preview", () => {
   });
 
   it("disconnects observers and cancels the pending frame on cleanup", () => {
-    const { documentRoot, windowRoot, observer } = createBrowser();
+    const { documentRoot, windowRoot, observer, pauseButton, element } = createBrowser();
     const stop = bootGame(documentRoot);
 
     stop();
@@ -170,6 +194,8 @@ describe("game preview", () => {
     expect(windowRoot.cancelAnimationFrame).toHaveBeenCalledWith(1);
     expect(windowRoot.removeEventListener).toHaveBeenCalledWith("resize", expect.any(Function));
     expect(observer.disconnect).toHaveBeenCalledOnce();
+    expect(element.removeEventListener).toHaveBeenCalledWith("keydown", expect.any(Function));
+    expect(pauseButton.removeEventListener).toHaveBeenCalledWith("click", expect.any(Function));
   });
 
   it("reports missing canvas, context, or browser window explicitly", () => {
@@ -216,12 +242,22 @@ describe("canvas sizing", () => {
   });
 
   it("passes keyboard actions through the game loop and tears it down", () => {
-    const { documentRoot, context, windowRoot, frame } = createBrowser();
+    const { documentRoot, context, windowRoot, frame, pressCanvas, clickPause, pauseButton } =
+      createBrowser();
     const stop = bootGame(documentRoot);
     frame(1000);
 
     windowRoot.press("keydown", "ArrowRight");
     windowRoot.press("keydown", "Space");
+    frame(1025);
+    expect(render).toHaveBeenLastCalledWith(
+      context,
+      expect.objectContaining({ shapeX: 402, jumpRequested: false }),
+      { reducedMotion: false },
+    );
+
+    pressCanvas("keydown", "ArrowRight");
+    pressCanvas("keydown", "Space");
     frame(1050);
 
     expect(render).toHaveBeenLastCalledWith(
@@ -230,17 +266,36 @@ describe("canvas sizing", () => {
       { reducedMotion: false },
     );
 
-    windowRoot.press("keydown", "KeyP");
+    pressCanvas("keydown", "KeyP");
     frame(1100);
     expect(render).toHaveBeenLastCalledWith(
       context,
       expect.objectContaining({ shapeX: 404, paused: true }),
       { reducedMotion: false },
     );
+    expect(pauseButton.textContent).toBe("Resume animation");
+    expect(pauseButton.setAttribute).toHaveBeenLastCalledWith("aria-pressed", "true");
+
+    clickPause();
+    expect(pauseButton.textContent).toBe("Pause animation");
+    expect(pauseButton.setAttribute).toHaveBeenLastCalledWith("aria-pressed", "false");
+    frame(1150);
+    expect(render).toHaveBeenLastCalledWith(
+      context,
+      expect.objectContaining({ shapeX: 408, paused: false }),
+      { reducedMotion: false },
+    );
+
+    clickPause();
+    frame(1200);
+    expect(render).toHaveBeenLastCalledWith(
+      context,
+      expect.objectContaining({ shapeX: 408, paused: true }),
+      { reducedMotion: false },
+    );
+    expect(pauseButton.textContent).toBe("Resume animation");
+    expect(pauseButton.setAttribute).toHaveBeenLastCalledWith("aria-pressed", "true");
 
     stop();
-    expect(windowRoot.removeEventListener).toHaveBeenCalledWith("keydown", expect.any(Function));
-    expect(windowRoot.removeEventListener).toHaveBeenCalledWith("keyup", expect.any(Function));
-    expect(windowRoot.removeEventListener).toHaveBeenCalledWith("blur", expect.any(Function));
   });
 });

@@ -37,6 +37,12 @@ export function bootGame(documentRoot: Document): () => void {
     throw new Error("The game canvas element was not found.");
   }
 
+  const pauseButton = documentRoot.querySelector<HTMLButtonElement>("#preview-toggle");
+
+  if (pauseButton === null) {
+    throw new Error("The preview pause control was not found.");
+  }
+
   const context = canvas.getContext("2d");
 
   if (context === null) {
@@ -53,7 +59,20 @@ export function bootGame(documentRoot: Document): () => void {
   let paused = false;
   let previousTimestamp: number | undefined;
   let frameId: number;
-  const input = createInputController(windowRoot);
+  const input = createInputController(canvas);
+
+  const updatePauseButton = (): void => {
+    pauseButton.textContent = paused ? "Resume animation" : "Pause animation";
+    pauseButton.setAttribute("aria-pressed", String(paused));
+  };
+  const togglePaused = (): void => {
+    paused = !paused;
+    updatePauseButton();
+  };
+  const handlePauseButtonClick = (): void => {
+    togglePaused();
+  };
+  pauseButton.addEventListener("click", handlePauseButtonClick);
 
   const draw = (): void => {
     render(context, state, { reducedMotion: motionPreference.matches });
@@ -71,7 +90,7 @@ export function bootGame(documentRoot: Document): () => void {
         : Math.min((timestamp - previousTimestamp) / 1000, MAX_DELTA_SECONDS);
     previousTimestamp = timestamp;
     if (input.consumeActionPress("pause")) {
-      paused = !paused;
+      togglePaused();
     }
     const actions: GameActions = {
       left: input.isActionActive("left"),
@@ -95,6 +114,7 @@ export function bootGame(documentRoot: Document): () => void {
     windowRoot.removeEventListener("resize", resize);
     resizeObserver.disconnect();
     input.dispose();
+    pauseButton.removeEventListener("click", handlePauseButtonClick);
   };
 }
 

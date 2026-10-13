@@ -245,6 +245,27 @@ h2 > span {
   font-size: 10px;
 }
 
+.preview-toggle {
+  padding: 7px 10px;
+  color: var(--ink);
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: #fffcf7;
+  font: inherit;
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.preview-toggle:hover {
+  background: #f3eee5;
+}
+
+.preview-toggle:focus-visible {
+  outline: 3px solid #7563b5;
+  outline-offset: 3px;
+}
+
 .preview-badge .status-dot {
   background: #719e7e;
   box-shadow: 0 0 0 3px #719e7e15;
