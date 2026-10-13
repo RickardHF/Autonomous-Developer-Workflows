@@ -272,6 +272,10 @@ h2 > span {
   animation: breathe 3s ease-in-out infinite;
 }
 
+.scene-toolbar:has(.preview-toggle[aria-pressed="true"]) .preview-badge .status-dot {
+  animation-play-state: paused;
+}
+
 .scene-viewport {
   background: #fff5e9;
 }
@@ -302,6 +306,14 @@ h2 > span {
   color: var(--ink);
   font-size: 12px;
   font-weight: 700;
+}
+
+.preview-controls {
+  margin: 0;
+  padding: 0 22px 15px;
+  color: #706b77;
+  font-size: 12px;
+  line-height: 1.7;
 }
 
 .caption-label > span {

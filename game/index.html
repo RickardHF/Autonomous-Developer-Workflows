@@ -64,9 +64,10 @@
               id="game-canvas"
               width="800"
               height="450"
-              role="img"
+              role="application"
               tabindex="0"
-              aria-label="McSquishy, a smiling coral jelly blob, wanders through a pastel meadow with lilac hills, mint platforms, flowers, and fluffy clouds."
+              aria-label="Interactive McSquishy preview: a smiling coral jelly blob wanders through a pastel meadow with lilac hills, mint platforms, flowers, and fluffy clouds."
+              aria-describedby="preview-controls"
             >
               An illustrated meadow with McSquishy, a smiling coral jelly blob.
               This preview needs a browser that supports Canvas 2D.
@@ -76,6 +77,11 @@
             <span class="caption-label"><span aria-hidden="true">&#10022;</span> Little blob, big dreams.</span>
             <span>This is a moving art preview. Playable adventures are still on the way.</span>
           </div>
+          <p class="preview-controls" id="preview-controls">
+            Focus the preview to use the keyboard: Left/Right arrows or A/D to move,
+            Up arrow, W, or Space to request a jump, and P to pause or resume.
+            You can also use the Pause/Resume animation button.
+          </p>
         </section>
       </main>
 
