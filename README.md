@@ -140,5 +140,7 @@ npm run test
 npm run typecheck
 ```
 
+The default keyboard controls are documented in [`docs/CONTROLS.md`](./docs/CONTROLS.md).
+
 The Vite development server serves a placeholder canvas. Vitest runs the smoke test in a
 Node environment, so the scaffold has no backend or browser automation dependency.
