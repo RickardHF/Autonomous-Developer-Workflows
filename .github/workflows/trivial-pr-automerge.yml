@@ -149,9 +149,11 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 25
     permissions:
+      actions: write
+      checks: read
       contents: write
       pull-requests: write
-      actions: write
+      statuses: read
     steps:
       - name: Checkout analyzed trusted base
         uses: actions/checkout@v7
