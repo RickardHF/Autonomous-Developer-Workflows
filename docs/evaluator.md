@@ -227,12 +227,18 @@ in-progress runs of this workflow for the same source branch.
    without invalidating the complete evaluation; recover Pages and publish the
    retained bundle without repeating AI evaluation.
 
-The [Publish Workshop & Evaluation](../.github/workflows/pages.yml) workflow
-deploys the **whole existing static workshop**, not just the badge. Main pushes
-update the site independently of evaluation. Successful main evaluations trigger
-another deployment to update the scores. Deployments are serialized, check out
-current main, and select the newest eligible complete main evaluation rather
-than blindly publishing whichever run finished last.
+The [Publish Game & Evaluation](../.github/workflows/pages.yml) workflow installs
+the locked game dependencies, builds `game/dist`, and deploys **only the built
+McSquishy game and evaluation outputs**, with `.nojekyll`. The game opens directly
+at the existing Pages root; relative asset URLs support repository Pages paths
+and custom-domain roots. The workshop dashboard, exercises, and repository
+source files are not published. Workshop sources remain available for local use.
+
+Main pushes update the game independently of evaluation. Successful main
+evaluations trigger another deployment to update the scores. Deployments are
+serialized, check out current main, and select the newest eligible complete main
+evaluation rather than blindly publishing whichever run finished last. A late
+evaluation cannot roll the game back to the evaluated revision.
 
 The README embeds the permanent `evaluation/eval-badge.svg` Pages URL.
 `evaluation/results.jsonl` and `evaluation/snapshot.json` expose the scores and
@@ -241,12 +247,25 @@ site-only updates even after its Actions artifact expires. A failed or incomplet
 evaluation does not remove the last complete image; initial absence of any
 complete evaluation is shown explicitly as pending.
 
+Actions artifacts retain run-specific evaluation bundles, diagnostics, and PR
+comparison evidence only for their configured retention period. Pages preserves
+the **latest complete main result**, not permanent history for every run. Do not
+delete the published `evaluation/snapshot.json` during game-only updates: it is
+the carry-forward source when the original artifact has expired. Losing both the
+published snapshot and its artifact can require a new evaluation to recover.
+
 The badge is the **latest complete evaluation**, not a guarantee that its source
 SHA equals main at every instant. Its date/commit label identifies the evaluated
 revision. Normal Pages and GitHub image-cache propagation may delay a refresh.
 Manual runs on other branches retain their diagnostic snapshots but cannot
 update the public image. Failed, cancelled, foreign-repository, or unrelated
 revision runs cannot supply the published snapshot.
+
+The staging command receives the built game through `--game-directory`, requires
+a nonempty `index.html`, and rejects a game-supplied `evaluation/` directory.
+Missing builds, invalid published snapshots, and publication API failures fail
+the deployment explicitly rather than replacing the live site with lost or
+partial evaluation data.
 
 The PR regression check is independent of this publication pipeline: it still
 evaluates main and PR definitions freshly in the same run, without reading a
@@ -268,7 +287,8 @@ also needs a new evaluation. Site-only automation can explicitly dispatch
 After the workflows reach `main`, set **Settings -> Pages -> Source** to
 **GitHub Actions** once. Keep the `github-pages` environment restricted to main,
 without recurring reviewer approval, and preserve the existing site URL.
-For a template copy, replace the README image/link with
+For a template copy, update the README game link to your own Pages root and
+replace the evaluation image/link with
 `https://<owner>.github.io/<repository>/evaluation/eval-badge.svg`, or your Pages
 custom-domain equivalent. Evaluation summaries obtain the actual Pages URL.
 Also replace the repository-specific Actions links in `README.md` and this
@@ -278,7 +298,7 @@ document with your own
 URLs, so template users open their own runs rather than the upstream repository.
 
 Run **Evaluate Agents & Skills** on main to create the first complete snapshot.
-**Publish Workshop & Evaluation** can also be dispatched to refresh the site or
+**Publish Game & Evaluation** can also be dispatched to refresh the game or
 recover a deployment without rerunning AI evaluation:
 
 ```bash
@@ -286,11 +306,14 @@ gh workflow run evaluate.yml --ref main
 gh workflow run pages.yml --ref main
 ```
 
-Confirm the README image renders without downloads and `/learn/` still loads
-setup, exercise Markdown, and assets. Publication errors fail explicitly; they
-do not silently discard existing results. If the hosting migration fails,
-restore the previous branch-based Pages source while diagnosing the failure;
-do not weaken main protection.
+Confirm the Pages root opens McSquishy directly, its JavaScript, stylesheet, and
+favicon load beneath the repository URL prefix, and the README image renders
+without downloads. The SVG, `results.jsonl`, and `snapshot.json` stay under
+`/evaluation/`; `/learn/` and the exercise files are no longer deployed.
+Publication errors fail explicitly and leave the previous deployment intact.
+Recover by rerunning `pages.yml` after fixing the build or publishing error;
+rerun evaluation only if no complete snapshot or unexpired bundle remains.
+Do not delete the current deployment or weaken main protection during recovery.
 
 After installing the evaluator dependencies, run the evaluation workflow tests
 from the repository root:
@@ -301,5 +324,6 @@ npm --prefix evaluator run test:workflows
 
 These tests execute workflow scripts with mocked evaluation, publication/API
 fixtures, and disposable local Git repositories. They cover complete SVG output,
-retaining results on failures and artifact expiration, out-of-order runs, and
-site preservation. They do not require Copilot authentication or write to GitHub.
+retaining results on failures and artifact expiration, out-of-order runs,
+game-only payloads, and missing-build failures. They do not require Copilot
+authentication or write to GitHub.

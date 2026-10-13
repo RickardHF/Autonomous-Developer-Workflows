@@ -24,23 +24,20 @@ then open <http://localhost:8000/learn/>.
 Any static server works — `npx serve .` or the VS Code Live Server extension are fine too. There is
 no build step, no `npm install`, and nothing to configure.
 
-## GitHub Pages
+## Local workshop and GitHub Pages
 
-The workshop is published at
-<https://eficodedemoorg.github.io/Agent-Orchestration-and-Evaluation-Workshop/>.
+The workshop browser is retained for **local use** using the server instructions
+above. When serving the repository root locally, [`index.html`](../index.html)
+redirects to `/learn/`. Serve the whole repository, not just `learn/`: the app
+loads the root `README.md` and the files under `exercises/` at runtime.
 
-Configure the repository under **Settings → Pages**:
-
-1. Set **Source** to **GitHub Actions**.
-2. Keep the `github-pages` environment restricted to `main`, without recurring reviewer approval.
-3. Run **Publish Workshop & Evaluation** to deploy the site; main pushes refresh it automatically.
-
-The root [`index.html`](../index.html) redirects to `/learn/`, while [`.nojekyll`](../.nojekyll)
-keeps the repository content static. The [Pages workflow](../.github/workflows/pages.yml)
-publishes the tracked repository root rather than only `learn/`: the app loads the root `README.md`
-and the files under `exercises/` at runtime. It also publishes the latest complete evaluation SVG
-and scores under `evaluation/`. Site updates do not wait for AI evaluation, and failed evaluations
-leave the last complete scores visible. See [Pages setup and recovery](../docs/evaluator.md#pages-setup-and-recovery).
+The [Pages workflow](../.github/workflows/pages.yml), **Publish Game & Evaluation**,
+publishes the built McSquishy game at the Pages root, plus the latest complete
+evaluation SVG and scores under `evaluation/`. It does not publish this workshop
+browser, the root redirect, or the exercise files. Existing local workshop
+progress stays in your browser; the game deployment does not migrate or reset it.
+See [Pages setup and recovery](../docs/evaluator.md#pages-setup-and-recovery)
+for the game and evaluation publishing configuration.
 
 ## How it works
 
