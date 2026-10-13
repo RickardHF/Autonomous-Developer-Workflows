@@ -15,34 +15,65 @@ protection depend on repository branch rules outside these workflows.
 | [Plan Gate](../.github/workflows/plan-gate.yml)               | `pull_request` to `main`                                               | Checks the required plan text on PRs authored by `github-actions[bot]`; it is skipped for other authors. |
 | [Evaluate Agents & Skills](../.github/workflows/evaluate.yml) | `push` to `main` or `workflow_dispatch` | Scores agent/skill definitions and uploads a commit-labeled badge artifact. |
 | [AI Issue Priority Triage](../.github/workflows/issue-priority-triage.md) | `workflow_dispatch` only | Prioritizes every open issue and groups cohesive work using native sub-issues. |
-| [Classify Approved Trivial PRs](../.github/workflows/trivial-pr-automerge.yml) | `pull_request_review` | Uses Copilot to assess approved changes and publishes its decision; it never merges or modifies a PR. |
+| [Auto-merge Approved Trivial PRs](../.github/workflows/trivial-pr-automerge.yml) | `pull_request_review` | Classifies approved changes with read-only Copilot, then squash-merges trivial PRs after guarded review/check validation and cleans up the source branch. |
 
-## Review-triggered trivial PR classification
+## Review-triggered trivial PR auto-merge
 
-The [Classify Approved Trivial PRs](../.github/workflows/trivial-pr-automerge.yml)
+The [Auto-merge Approved Trivial PRs](../.github/workflows/trivial-pr-automerge.yml)
 workflow reacts to submitted, edited, and dismissed PR reviews. Only a
-**submitted approval** starts an assessment. The PR must be open, non-draft,
-originate in this repository, and target `main`. Fork PRs and other target
-branches are excluded; non-approving reviews do not start analysis.
-The triggering approval must still cover the current head, but aggregate
-required-review rules do not gate classification. This assessment does not
-establish merge readiness.
+**submitted approval** starts an assessment, whether the reviewer is human or
+Copilot. Approval-looking comment text does not qualify. Every event starts a
+diagnostic preflight instead of silently skipping the entire job. Preflight
+resolves the trusted base through GitHub's API; the snapshot helper fetches
+complete PR and triggering-review metadata rather than relying on optional
+event fields. Available event revision and branch fields must match that data.
+The PR must be open, non-draft, originate in this repository, and target `main`.
+Fork PRs, other target branches, and non-approving reviews are reported as
+ineligible. The triggering approval must still cover the current head, but
+aggregate required-review rules do not gate classification; they gate merging.
 
 Copilot reviews the actual changes, not just the PR title or description, and
 publishes its decision in the Actions summary and `trivial-pr-analysis-<run_id>`
-artifact. The result is classification only: it does not merge, label, comment
-on, or otherwise modify the PR or its source branch. A trivial classification
-is not an authorization to merge; use the normal repository review and merge
-process.
+artifact. Nontrivial decisions do not modify the PR. A completed trivial
+decision enables a separate merge job, not a privileged Copilot session.
 
 After Copilot finishes, the workflow rechecks the triggering approval and the
 PR's open/non-draft state, source/target branches, and base/head revisions.
 If any changed, `decision.json` reports `status: stale` without a trivial verdict,
 and the summary marks the assessment as withheld. Raw inference output remains
 in the artifact for diagnostics only. A failed freshness check publishes no
-completed decision. Completed decisions record the analyzed revisions and review
-ID; their freshness reflects this final check, not an atomic publication guarantee
-or a promise that the PR will remain unchanged afterward.
+completed decision. Completed decisions are bound to the repository, run, PR,
+source branch, analyzed revisions, and review ID. The merge job validates that
+identity again and reads only this run's named artifact.
+
+Before merging, the workflow requires a still-valid triggering approval,
+satisfied aggregate review requirements, mergeability, passing required checks,
+and GitHub's ready merge state. Pending requirements are checked up to 60 times
+at 15-second intervals; exhaustion reports `pending-expired` and leaves the PR
+unmodified. Conflicts, requested changes, failed checks, and GitHub protection
+rejections report `blocked`. Missing required-check results cannot authorize a
+merge while GitHub reports its merge gate blocked. Repositories with no required
+checks can proceed only with a clean GitHub merge gate.
+
+The final checks and base/head/approval revalidation occur immediately before
+requesting a squash merge pinned to the analyzed head SHA. The workflow never
+bypasses branch protections or leaves a native auto-merge request behind.
+**GitHub's PR merge API atomically pins the head, not the base.** A base update
+can race the final recheck; this best-effort base protection is an explicitly
+accepted limitation, not an atomic guarantee.
+
+After GitHub confirms the exact merge result, the workflow deletes the source
+branch only if it is not a base/default branch, is unprotected, is unused by
+another open PR, and still points at the analyzed head. An already deleted
+branch is reported explicitly. Ref checking and deletion are not atomic, so
+concurrent branch updates can still race cleanup.
+
+Merges made with `GITHUB_TOKEN` do not ordinarily trigger other workflows through
+their resulting push. The merge job therefore explicitly dispatches
+`evaluate.yml` on `main`; successful evaluation already triggers `pages.yml`.
+Evaluation dispatch and branch cleanup are separate steps. Cleanup still runs
+if dispatch fails, and post-merge failures are reported as such rather than
+claiming the merge failed. Inspect the failed operation before retrying it.
 
 **Trivial can include small, low-risk functional fixes** as well as
 documentation, comments, spelling, formatting, and focused tests. Changes must
@@ -79,14 +110,23 @@ PR/repository text is untrusted data. Only an exact JSON decision containing
 `trivial: boolean` and a substantive `reason` is accepted; inference errors or
 malformed output fail the job. Analysis uses the built-in Actions token with
 `contents: read`, `pull-requests: read`, and `copilot-requests: write`; it has no
-write permission to merge or alter pull requests.
+write permission to merge or alter pull requests. Only the isolated merge job
+has `contents: write`, `pull-requests: write`, and `actions: write`, for merging,
+branch cleanup, and post-merge evaluation dispatch. No separate credential or
+repository native auto-merge setting is required.
 
-Review the Actions summary and `trivial-pr-analysis-<run_id>` artifact, retained
-for 14 days. API and inference errors fail visibly. The workflow is not a merge
-gate; repository branch rules and the normal review process remain responsible
-for authorizing merges.
+Review the Actions summaries and the `trivial-pr-analysis-<run_id>` and
+`trivial-pr-merge-<run_id>` artifacts, retained for 14 days. The first contains
+preflight diagnostics even when the event is ineligible; the second records
+merge and post-merge outcomes when that job runs. API and inference errors fail
+visibly. Existing repository branch rules remain responsible for authorizing
+merges; the workflow does not change them.
 
 The workflow must be published before qualifying approvals can activate it.
+After changes or an expired wait, submit a fresh approval to retry. Rerunning an
+old review-triggered run retains its old workflow/event context and is not a
+reliable way to activate newly published workflow code. Any GitHub requirement
+to approve a Copilot-triggered workflow run remains in effect.
 Focused tests use real temporary Git fixtures plus mocked Copilot/GitHub calls
 and do not merge or delete live PRs:
 
