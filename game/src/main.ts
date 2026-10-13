@@ -1,4 +1,5 @@
-import { createInitialState, update } from "./logic/index.ts";
+import { createInitialState, update, type GameActions } from "./logic/index.ts";
+import { createInputController } from "./input/index.ts";
 import { PLACEHOLDER_COLOR, render } from "./render/index.ts";
 import "./styles.css";
 
@@ -49,8 +50,10 @@ export function bootGame(documentRoot: Document): () => void {
 
   const motionPreference = windowRoot.matchMedia("(prefers-reduced-motion: reduce)");
   let state = createInitialState();
+  let paused = false;
   let previousTimestamp: number | undefined;
   let frameId: number;
+  const input = createInputController(windowRoot);
 
   const draw = (): void => {
     render(context, state, { reducedMotion: motionPreference.matches });
@@ -67,7 +70,16 @@ export function bootGame(documentRoot: Document): () => void {
         ? 0
         : Math.min((timestamp - previousTimestamp) / 1000, MAX_DELTA_SECONDS);
     previousTimestamp = timestamp;
-    state = update(state, deltaSeconds);
+    if (input.consumeActionPress("pause")) {
+      paused = !paused;
+    }
+    const actions: GameActions = {
+      left: input.isActionActive("left"),
+      right: input.isActionActive("right"),
+      jump: input.isActionActive("jump"),
+      pause: paused,
+    };
+    state = update(state, deltaSeconds, actions);
     draw();
     frameId = windowRoot.requestAnimationFrame(loop);
   };
@@ -82,6 +94,7 @@ export function bootGame(documentRoot: Document): () => void {
     windowRoot.cancelAnimationFrame(frameId);
     windowRoot.removeEventListener("resize", resize);
     resizeObserver.disconnect();
+    input.dispose();
   };
 }
 

@@ -30,6 +30,7 @@ function createBrowser() {
     getBoundingClientRect: vi.fn(() => bounds),
   };
   const canvas = element as unknown as HTMLCanvasElement;
+  const handlers = new Map<string, (event: Event) => void>();
   const preference = { matches: false };
   const requestAnimationFrame = vi.fn((_callback: FrameRequestCallback) => 1);
   const windowRoot = {
@@ -37,7 +38,12 @@ function createBrowser() {
     matchMedia: vi.fn(() => preference),
     requestAnimationFrame,
     cancelAnimationFrame: vi.fn(),
-    addEventListener: vi.fn(),
+    addEventListener: vi.fn((type: string, handler: (event: Event) => void) => {
+      handlers.set(type, handler);
+    }),
+    press(type: "keydown" | "keyup", code: string) {
+      handlers.get(type)?.({ code, repeat: false, preventDefault: vi.fn() } as unknown as Event);
+    },
     removeEventListener: vi.fn(),
   };
   const root = {
@@ -106,7 +112,7 @@ describe("game preview", () => {
 
     expect(render).toHaveBeenLastCalledWith(
       context,
-      { elapsed: 0.1, shapeX: 408, shapeY: 225, velocityX: 80 },
+      expect.objectContaining({ elapsed: 0.1, shapeX: 408, shapeY: 225, velocityX: 80 }),
       { reducedMotion: false },
     );
     stop();
@@ -127,7 +133,7 @@ describe("game preview", () => {
     expect(canvas.height).toBe(540);
     expect(render).toHaveBeenLastCalledWith(
       context,
-      { elapsed: 0.1, shapeX: 408, shapeY: 225, velocityX: 80 },
+      expect.objectContaining({ elapsed: 0.1, shapeX: 408, shapeY: 225, velocityX: 80 }),
       { reducedMotion: false },
     );
     stop();
@@ -142,14 +148,14 @@ describe("game preview", () => {
 
     expect(render).toHaveBeenLastCalledWith(
       context,
-      { elapsed: 0.1, shapeX: 408, shapeY: 225, velocityX: 80 },
+      expect.objectContaining({ elapsed: 0.1, shapeX: 408, shapeY: 225, velocityX: 80 }),
       { reducedMotion: true },
     );
     preference.matches = false;
     frame(200);
     expect(render).toHaveBeenLastCalledWith(
       context,
-      { elapsed: 0.2, shapeX: 416, shapeY: 225, velocityX: 80 },
+      expect.objectContaining({ elapsed: 0.2, shapeX: 416, shapeY: 225, velocityX: 80 }),
       { reducedMotion: false },
     );
     stop();
@@ -207,5 +213,34 @@ describe("canvas sizing", () => {
 
     expect(widthSetter).not.toHaveBeenCalled();
     expect(heightSetter).not.toHaveBeenCalled();
+  });
+
+  it("passes keyboard actions through the game loop and tears it down", () => {
+    const { documentRoot, context, windowRoot, frame } = createBrowser();
+    const stop = bootGame(documentRoot);
+    frame(1000);
+
+    windowRoot.press("keydown", "ArrowRight");
+    windowRoot.press("keydown", "Space");
+    frame(1050);
+
+    expect(render).toHaveBeenLastCalledWith(
+      context,
+      expect.objectContaining({ shapeX: 404, jumpRequested: true }),
+      { reducedMotion: false },
+    );
+
+    windowRoot.press("keydown", "KeyP");
+    frame(1100);
+    expect(render).toHaveBeenLastCalledWith(
+      context,
+      expect.objectContaining({ shapeX: 404, paused: true }),
+      { reducedMotion: false },
+    );
+
+    stop();
+    expect(windowRoot.removeEventListener).toHaveBeenCalledWith("keydown", expect.any(Function));
+    expect(windowRoot.removeEventListener).toHaveBeenCalledWith("keyup", expect.any(Function));
+    expect(windowRoot.removeEventListener).toHaveBeenCalledWith("blur", expect.any(Function));
   });
 });
