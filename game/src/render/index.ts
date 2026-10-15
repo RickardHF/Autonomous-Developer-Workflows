@@ -1,4 +1,5 @@
 import type { GameState } from "../logic/index.ts";
+import { TEST_LEVEL } from "../levels/index.ts";
 
 export const SCENE_WIDTH = 800;
 export const SCENE_HEIGHT = 450;
@@ -99,6 +100,7 @@ function platform(
   x: number,
   y: number,
   width: number,
+  height = 31,
 ): void {
   context.fillStyle = "#92809b12";
   context.beginPath();
@@ -106,7 +108,7 @@ function platform(
   context.fill();
   context.fillStyle = "#dfc4ac";
   context.beginPath();
-  context.roundRect(x, y, width, 31, 12);
+  context.roundRect(x, y, width, height, 12);
   context.fill();
   context.fillStyle = "#a7cfb8";
   context.beginPath();
@@ -169,8 +171,9 @@ function flower(
 }
 
 function drawMeadow(context: CanvasRenderingContext2D): void {
-  platform(context, 79, 168, 109);
-  platform(context, 599, 177, 114);
+  for (const solid of TEST_LEVEL.solids) {
+    platform(context, solid.x, solid.y, solid.width, solid.height);
+  }
   sprig(context, 96, 163, 0.42, "#7ca88a");
   flower(context, 689, 172, 0.55, "#fff8ec");
 
@@ -245,13 +248,21 @@ function drawBlob(
 ): void {
   const wobble = Math.sin(time * 3);
   const bob = Math.sin(time * 3) * 2.5;
-  const facing = state.velocityX < 0 ? -1 : 1;
+  const { player } = state;
+  const centerX = player.x + player.width / 2;
+  const centerY = player.y + player.height / 2;
+  const facing = player.velocityX < 0 ? -1 : 1;
+  const reaction = state.squashTimer > 0 && state.squashEvent !== null
+    ? state.squashTimer / 0.1
+    : 0;
+  const reactionX = state.squashEvent === "jump" ? 1 - reaction * 0.16 : 1 + reaction * 0.2;
+  const reactionY = state.squashEvent === "jump" ? 1 + reaction * 0.2 : 1 - reaction * 0.16;
 
-  ellipse(context, state.shapeX, state.shapeY + 43, 39 - bob, 6, "#5a5f5630");
-  ellipse(context, state.shapeX, state.shapeY + 43, 26, 3, "#5a5f5620");
+  ellipse(context, centerX, player.y + player.height + 5, 39 - bob, 6, "#5a5f5630");
+  ellipse(context, centerX, player.y + player.height + 5, 26, 3, "#5a5f5620");
   context.save();
-  context.translate(state.shapeX, state.shapeY + bob);
-  context.scale(1 + wobble * 0.035, 1 - wobble * 0.045);
+  context.translate(centerX, centerY + bob);
+  context.scale((1 + wobble * 0.035) * reactionX, (1 - wobble * 0.045) * reactionY);
 
   const jelly = context.createLinearGradient(-20, -40, 24, 36);
   jelly.addColorStop(0, "#ffb29b");
