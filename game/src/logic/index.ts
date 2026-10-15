@@ -1,9 +1,13 @@
+import { TEST_LEVEL } from "../levels/index.ts";
+import { stepBody, type PlayerBody } from "../physics/index.ts";
+
+export type SquashEvent = "jump" | "land";
+
 export interface GameState {
   elapsed: number;
-  shapeX: number;
-  shapeY: number;
-  velocityX: number;
-  jumpRequested: boolean;
+  player: PlayerBody;
+  squashEvent: SquashEvent | null;
+  squashTimer: number;
   paused: boolean;
 }
 
@@ -14,16 +18,14 @@ export interface GameActions {
   pause: boolean;
 }
 
-const SHAPE_MIN_X = 80;
-const SHAPE_MAX_X = 720;
+const SQUASH_DURATION = 0.1;
 
 export function createInitialState(): GameState {
   return {
     elapsed: 0,
-    shapeX: 400,
-    shapeY: 225,
-    velocityX: 80,
-    jumpRequested: false,
+    player: { ...TEST_LEVEL.playerStart },
+    squashEvent: null,
+    squashTimer: 0,
     paused: false,
   };
 }
@@ -31,51 +33,34 @@ export function createInitialState(): GameState {
 export function update(
   state: GameState,
   deltaSeconds: number,
-  actions: GameActions = {
-    left: false,
-    right: false,
-    jump: false,
-    pause: false,
-  },
+  actions: GameActions = { left: false, right: false, jump: false, pause: false },
 ): GameState {
   if (actions.pause) {
-    return {
-      ...state,
-      paused: true,
-      jumpRequested: actions.jump,
-    };
+    return { ...state, paused: true };
   }
 
-  const inputVelocity =
-    actions.left === actions.right
-      ? state.velocityX
-      : actions.left
-        ? -Math.abs(state.velocityX)
-        : Math.abs(state.velocityX);
-  const elapsed = state.elapsed + deltaSeconds;
-  let shapeX = state.shapeX + inputVelocity * deltaSeconds;
-  let velocityX = inputVelocity;
-
-  if (actions.left !== actions.right) {
-    shapeX = Math.max(SHAPE_MIN_X, Math.min(SHAPE_MAX_X, shapeX));
-  } else {
-    while (shapeX > SHAPE_MAX_X || shapeX < SHAPE_MIN_X) {
-      if (shapeX > SHAPE_MAX_X) {
-        shapeX = SHAPE_MAX_X - (shapeX - SHAPE_MAX_X);
-        velocityX = -Math.abs(velocityX);
-      } else {
-        shapeX = SHAPE_MIN_X + (SHAPE_MIN_X - shapeX);
-        velocityX = Math.abs(velocityX);
-      }
-    }
-  }
+  const player = { ...state.player };
+  const wasGrounded = player.grounded;
+  const jumped = stepBody(
+    player,
+    { left: actions.left, right: actions.right },
+    actions.jump,
+    deltaSeconds,
+    TEST_LEVEL.solids,
+  );
+  const landed = !wasGrounded && player.grounded;
+  const squashEvent = jumped ? "jump" : landed ? "land" : state.squashEvent;
+  const squashTimer = jumped || landed
+    ? SQUASH_DURATION
+    : Math.max(0, state.squashTimer - deltaSeconds);
 
   return {
-    elapsed,
-    shapeX,
-    shapeY: state.shapeY,
-    velocityX,
-    jumpRequested: actions.jump,
+    elapsed: state.elapsed + deltaSeconds,
+    player,
+    squashEvent: squashTimer > 0 ? squashEvent : null,
+    squashTimer,
     paused: false,
   };
 }
+
+export { SQUASH_DURATION };
