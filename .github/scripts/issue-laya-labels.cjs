@@ -127,6 +127,10 @@ async function reconcile(input) {
   if (!fresh(issue)) return { status: "stale", labels: [], reason: "Issue content changed; labels were not updated." };
   const { owner, repo } = parameters;
   const existing = await input.github.paginate(input.github.rest.issues.listLabelsForRepo, { owner, repo, per_page: 100 });
+  for (const [name] of DEFINITIONS) {
+    check(!existing.some((label) => label.name !== name && label.name.toLowerCase() === name),
+      `Label spelling conflicts with "${name}"; rename it to the exact lowercase name before rerunning Laya`);
+  }
   for (const [name, color, description] of DEFINITIONS) {
     if (existing.some((label) => label.name === name)) continue;
     try {
