@@ -274,12 +274,18 @@ test("workflow wires only issue edits, local inference and a separate trusted wr
   assert.match(workflow.concurrency.group, /github\.event\.issue\.number/);
   assert.deepEqual(workflow.jobs.classify.permissions, { contents: "read", issues: "read" });
   assert.deepEqual(workflow.jobs.label.permissions, { contents: "read", issues: "write" });
+  for (const job of Object.values(workflow.jobs)) {
+    assert.doesNotMatch(JSON.stringify(job.env ?? {}), /\brunner\s*\./,
+      "The runner context is unavailable in job-level env");
+  }
   assert.equal(workflow.jobs.label.needs, "classify");
   const classification = workflow.jobs.classify.steps;
   const writer = workflow.jobs.label.steps;
   const inference = classification.find((step) => step.name === "Classify issue text as data");
   assert.match(inference.run, /issue-laya-classify\.py/);
-  assert.equal(inference.env, undefined);
+  assert.deepEqual(inference.env, { HF_HOME: "${{ runner.temp }}/issue-laya-hub" });
+  const modelCache = classification.find((step) => step.name === "Cache pinned model download");
+  assert.equal(modelCache.with.path, inference.env.HF_HOME);
   assert.ok(!JSON.stringify(workflow.jobs.classify.env).match(/TOKEN|github\.token|secrets/));
   assert.ok(!JSON.stringify(writer).match(/pip install|issue-laya-classify\.py|laya\.load/));
   for (const steps of [classification, writer]) {
