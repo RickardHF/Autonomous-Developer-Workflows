@@ -21,7 +21,6 @@ jobs:
     outputs:
       source_sha: ${{ steps.source.outputs.sha }}
     env:
-      HF_HOME: ${{ runner.temp }}/issue-laya-hub
       HF_HUB_DISABLE_TELEMETRY: "1"
       USE_TF: "0"
     steps:
@@ -65,10 +64,12 @@ jobs:
       - name: Cache pinned model download
         uses: actions/cache@v6
         with:
-          path: ${{ env.HF_HOME }}
+          path: ${{ runner.temp }}/issue-laya-hub
           key: issue-laya-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('.github/scripts/issue-laya-requirements.txt', '.github/scripts/issue-laya-classify.py') }}
 
       - name: Classify issue text as data
+        env:
+          HF_HOME: ${{ runner.temp }}/issue-laya-hub
         run: python .github/scripts/issue-laya-classify.py "$RUNNER_TEMP/issue-laya/snapshot.json" "$RUNNER_TEMP/issue-laya/decision.json"
 
       - name: Validate and summarize assessment
