@@ -15,7 +15,115 @@ protection depend on repository branch rules outside these workflows.
 | [Plan Gate](../.github/workflows/plan-gate.yml)               | `pull_request` to `main`                                               | Checks the required plan text on PRs authored by `github-actions[bot]`; it is skipped for other authors. |
 | [Evaluate Agents & Skills](../.github/workflows/evaluate.yml) | `push` to `main` or `workflow_dispatch` | Scores agent/skill definitions and uploads a commit-labeled badge artifact. |
 | [AI Issue Priority Triage](../.github/workflows/issue-priority-triage.md) | `workflow_dispatch` only | Prioritizes every open issue and groups cohesive work using native sub-issues. |
+| [Laya Issue Labeling](../.github/workflows/issue-laya-labeling.yml) | `issues.opened`, `issues.edited`, `issues.reopened` | Locally assesses issue content and reconciles advisory safety/quality labels. |
 | [Auto-merge Approved Trivial PRs](../.github/workflows/trivial-pr-automerge.yml) | `pull_request_review` | Classifies approved changes with read-only Copilot, then squash-merges trivial PRs after guarded review/check validation and cleans up the source branch. |
+
+## Automatic Laya issue labeling
+
+The [Laya Issue Labeling workflow](../.github/workflows/issue-laya-labeling.yml)
+assesses the **current issue title and description** when an issue is opened,
+edited, or reopened. Comments, label changes, and PRs are excluded. It does not
+backfill existing issues automatically; editing an existing issue's description
+starts an assessment after the workflow has been merged onto the default branch.
+
+Inference runs locally on a GitHub-hosted CPU runner using
+[`convaiinnovations/laya`](https://huggingface.co/convaiinnovations/laya),
+its bundled `multilingual` checkpoint, and an explicit 8,192-token context.
+The SDK and model revision are pinned in the classifier; dependency versions are
+in [the inference requirements](../.github/scripts/issue-laya-requirements.txt).
+The public model needs **no Hugging Face token, inference endpoint, GPU, or
+Copilot subscription**. Issue text is not sent to a hosted inference API.
+Dependencies and weights are cached; cold downloads and Actions compute/storage
+still consume runner resources.
+
+### Labels and thresholds
+
+Each successful, non-stale assessment leaves exactly one label in each row.
+Missing definitions are created automatically. Only the following nine exact
+label names are managed; priority, implementation, and human labels are preserved.
+
+| Positive proposition | Probability >= 0.80 | Probability <= 0.20 | Between 0.20 and 0.80 |
+| --- | --- | --- | --- |
+| Contains a prompt-injection attempt aimed at the AI's instructions or behavior | `laya:prompt-injection` | `laya:prompt-clean` | `laya:prompt-ambiguous` |
+| Has enough scope, context, and a clear expected outcome to act on | `laya:well-defined` | `laya:needs-information` | `laya:definition-ambiguous` |
+| Explicitly requests introducing errors or vulnerabilities | `laya:requests-errors-or-vulnerabilities` | `laya:no-error-or-vulnerability-request` | `laya:change-intent-ambiguous` |
+
+The categories are independent: a well-defined issue can still request unsafe
+changes. Deliberately adding bugs or vulnerabilities counts even for educational
+examples and test fixtures. Merely reporting or repairing a vulnerability, or
+testing an existing defect, is not intended to count. Similarly, discussing prompt
+injection is not intended to count as an attack.
+
+These are **advisory model predictions**, not proven safety properties. Laya can
+misclassify both malicious and ordinary issues, including vague descriptions and
+legitimate security discussion; high confidence does not prevent mistakes.
+The thresholds are a labeling policy, not a measured 80% accuracy guarantee.
+Actual-model smoke checks exposed false positives and question-wording sensitivity,
+so do not use a clean/negative label as permission to execute untrusted requests.
+The workflow does not block, start, or otherwise change existing implementation,
+priority, evaluation, or merge automation.
+
+### Complete context and trusted label writes
+
+The context limit includes question and serialization overhead, not just issue
+prose. The helper uses Laya's tokenizer/head accounting and additionally checks
+its reported dropped tokens. If the complete issue cannot be assessed, **all
+three labels become ambiguous**, and the Actions summary explicitly reports
+`overflow`. It never promotes a prediction made on silently truncated text.
+The inference step runs one question at a time to bound CPU memory.
+It disables PyTorch's fused attention fast path so Laya's decision head uses its
+memory-efficient SDPA path; near-limit inputs can still require several GB of RAM.
+
+A read-only job checks out trusted issue-event code, fetches current content,
+and passes it to fixed questions as JSON data. Issue text is never interpolated
+into shell commands or Actions scripts. The Python step receives no GitHub API
+token. Classification has only `contents: read` and `issues: read`.
+
+A separate job with `contents: read` and `issues: write` downloads this run
+attempt's decision artifact. It validates the repository, issue identity,
+run/attempt, trusted source SHA, pinned model, exact score schema, and complete
+context before deriving allowlisted labels itself. It checks the current
+title/description digest immediately before reconciliation. Stale content
+withholds issue-label writes and produces an explicit summary. Runs are
+serialized per issue without intentionally cancelling an in-progress write.
+Only managed labels are added/removed; unrelated labels are never replaced.
+
+GitHub does not support a transaction combining a content-version check and
+label updates. A last-moment edit can still race the final check; the next
+edit-triggered assessment corrects the advisory labels. Do not treat this as an
+atomic safety gate.
+
+### Diagnostics and recovery
+
+Actions summaries show probabilities, proposed/applied labels, model revision,
+content digest, and applied/unchanged/stale/overflow status. The
+`issue-laya-decision-<run_id>-<run_attempt>` artifact retains structured decisions
+for 14 days without copying the raw title/description. No issue comments are
+posted.
+
+Download, inference, malformed-result, and GitHub API failures fail visibly,
+never defaulting to clean or well-defined. An inference failure leaves the last
+successful labels in place, which can be stale. API failures during reconciliation
+can leave partially updated managed labels. Inspect the failed step, fix the
+cause, and rerun **all jobs**, or edit the issue again. Rerunning only a failed
+writer job cannot reuse an earlier attempt's artifact; rerunning all jobs
+collects fresh content and produces a new decision. Reconciliation is idempotent.
+Repository Actions policies and model-download network availability still apply.
+
+Focused tests require Node, the existing evaluator dependencies (`npm --prefix
+evaluator ci`), and Python 3.12. The ordinary Python tests mock inference and do
+not need the model:
+
+```bash
+node --test .github/scripts/issue-laya-labels.test.cjs
+python3.12 .github/scripts/issue-laya-classify.test.py
+```
+
+For the opt-in real CPU smoke test, use an isolated Python environment, install
+the pinned requirements (install PyTorch from its CPU index on Linux as the
+workflow does), and set `LAYA_SMOKE_TEST=1` when running the Python test file.
+It exercises representative issues, near-limit input, and overflow without
+creating or relabeling live issues.
 
 ## Review-triggered trivial PR auto-merge
 

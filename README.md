@@ -106,6 +106,16 @@ Reference documentation lives in the [/docs](/docs/) folder:
 The repository also contains GitHub Actions workflows that orchestrate agents. See
 [Agent orchestration](./docs/agent-orchestration.md) for the current pipeline and its guardrails.
 
+**Laya Issue Labeling** runs when issues are opened, their title/description is
+edited, or they are reopened. It runs Laya locally on an Actions CPU runner and
+maintains independent labels for prompt injection, definition quality, and
+requests to introduce bugs or vulnerabilities. Positive probabilities at least
+80% select the positive label; at most 20% select the negative label; intermediate
+scores are labeled **ambiguous**. Unrelated labels are preserved. These are
+advisory assessments, not safety guarantees or implementation gates. See
+[automatic Laya issue labeling](./docs/agent-orchestration.md#automatic-laya-issue-labeling)
+for the label names, context limits, and recovery instructions.
+
 To manually prioritize the entire issue backlog, use **Actions -> AI Issue
 Priority Triage -> Run workflow**. It assigns exactly one of `high`, `medium`,
 `low`, or `blocked`, preserves unrelated labels, explains priority changes, and

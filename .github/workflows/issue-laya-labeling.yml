@@ -1,0 +1,142 @@
+name: Laya Issue Labeling
+
+on:
+  issues:
+    types: [opened, edited, reopened]
+
+permissions: {}
+
+concurrency:
+  group: issue-laya-labeling-${{ github.event.issue.number }}
+  cancel-in-progress: false
+
+jobs:
+  classify:
+    name: Assess issue with local Laya
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    permissions:
+      contents: read
+      issues: read
+    outputs:
+      source_sha: ${{ steps.source.outputs.sha }}
+    env:
+      HF_HOME: ${{ runner.temp }}/issue-laya-hub
+      HF_HUB_DISABLE_TELEMETRY: "1"
+      USE_TF: "0"
+    steps:
+      - name: Checkout trusted issue-event revision
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+
+      - name: Record trusted source revision
+        id: source
+        run: echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+
+      - name: Collect current title and description
+        uses: actions/github-script@v9
+        with:
+          script: |
+            const fs = require("node:fs");
+            const path = require("node:path");
+            const { collectSnapshot } = require(path.join(process.env.GITHUB_WORKSPACE, ".github/scripts/issue-laya-labels.cjs"));
+            const snapshot = await collectSnapshot({
+              github, event: context.payload, repository: process.env.GITHUB_REPOSITORY,
+              issueNumber: context.issue.number, runId: process.env.GITHUB_RUN_ID,
+              runAttempt: process.env.GITHUB_RUN_ATTEMPT, sourceSha: process.env.GITHUB_SHA,
+            });
+            fs.mkdirSync(path.join(process.env.RUNNER_TEMP, "issue-laya"), { recursive: true });
+            fs.writeFileSync(path.join(process.env.RUNNER_TEMP, "issue-laya/snapshot.json"), JSON.stringify(snapshot));
+
+      - name: Set up Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: .github/scripts/issue-laya-requirements.txt
+
+      - name: Install CPU inference dependencies
+        run: |
+          python -m pip install torch==2.14.1 --index-url https://download.pytorch.org/whl/cpu
+          python -m pip install -r .github/scripts/issue-laya-requirements.txt
+
+      - name: Cache pinned model download
+        uses: actions/cache@v6
+        with:
+          path: ${{ env.HF_HOME }}
+          key: issue-laya-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('.github/scripts/issue-laya-requirements.txt', '.github/scripts/issue-laya-classify.py') }}
+
+      - name: Classify issue text as data
+        run: python .github/scripts/issue-laya-classify.py "$RUNNER_TEMP/issue-laya/snapshot.json" "$RUNNER_TEMP/issue-laya/decision.json"
+
+      - name: Validate and summarize assessment
+        uses: actions/github-script@v9
+        with:
+          script: |
+            const fs = require("node:fs");
+            const path = require("node:path");
+            const { labelsFor } = require(path.join(process.env.GITHUB_WORKSPACE, ".github/scripts/issue-laya-labels.cjs"));
+            const decision = JSON.parse(fs.readFileSync(path.join(process.env.RUNNER_TEMP, "issue-laya/decision.json"), "utf8"));
+            const labels = labelsFor(decision, {
+              event: context.payload, repository: process.env.GITHUB_REPOSITORY,
+              issueNumber: context.issue.number, runId: process.env.GITHUB_RUN_ID,
+              runAttempt: process.env.GITHUB_RUN_ATTEMPT, sourceSha: process.env.GITHUB_SHA,
+            });
+            await core.summary.addHeading("Advisory Laya assessment")
+              .addCodeBlock(JSON.stringify({ ...decision, labels }, null, 2), "json").write();
+
+      - name: Upload validated decision only
+        uses: actions/upload-artifact@v7
+        with:
+          name: issue-laya-decision-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/issue-laya/decision.json
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Report incomplete assessment
+        if: failure()
+        run: echo "Laya assessment failed. No labels were authorized. Existing labels describe the last successful assessment and may be stale; inspect the failed step and rerun after recovery." >> "$GITHUB_STEP_SUMMARY"
+
+  label:
+    name: Reconcile advisory labels
+    needs: classify
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      issues: write
+    steps:
+      - name: Checkout the analyzed trusted revision
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ needs.classify.outputs.source_sha }}
+          persist-credentials: false
+
+      - name: Download this attempt's validated decision
+        uses: actions/download-artifact@v8
+        with:
+          name: issue-laya-decision-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/issue-laya-decision
+
+      - name: Revalidate current issue and reconcile managed labels
+        uses: actions/github-script@v9
+        with:
+          script: |
+            const fs = require("node:fs");
+            const path = require("node:path");
+            const { reconcile } = require(path.join(process.env.GITHUB_WORKSPACE, ".github/scripts/issue-laya-labels.cjs"));
+            const result = await reconcile({
+              github, event: context.payload, repository: process.env.GITHUB_REPOSITORY,
+              issueNumber: context.issue.number, runId: process.env.GITHUB_RUN_ID,
+              runAttempt: process.env.GITHUB_RUN_ATTEMPT, sourceSha: process.env.GITHUB_SHA,
+              decision: JSON.parse(fs.readFileSync(path.join(process.env.RUNNER_TEMP, "issue-laya-decision/decision.json"), "utf8")),
+            });
+            if (result.status === "stale") core.warning(result.reason);
+            await core.summary.addHeading(`Issue labels: ${result.status}`)
+              .addCodeBlock(JSON.stringify(result, null, 2), "json").write();
+
+      - name: Report incomplete reconciliation
+        if: failure()
+        run: echo "Label reconciliation failed and may be partially applied. No unrelated labels were intentionally changed. Inspect the failed step and rerun to converge to the current assessment." >> "$GITHUB_STEP_SUMMARY"
