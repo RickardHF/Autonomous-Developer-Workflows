@@ -108,10 +108,12 @@ The repository also contains GitHub Actions workflows that orchestrate agents. S
 
 **Laya Issue Labeling** runs when issues are opened, their title/description is
 edited, or they are reopened. It runs Laya locally on an Actions CPU runner and
-maintains independent labels for prompt injection, definition quality, and
-requests to introduce bugs or vulnerabilities. Positive probabilities at least
-80% select the positive label; at most 20% select the negative label; intermediate
-scores are labeled **ambiguous**. Unrelated labels are preserved. These are
+maintains independent labels for malicious prompt injection, issue state
+(well-defined, needs refinement, or needs details), and requests to introduce
+bugs or vulnerabilities. Injection assessments require 90% confidence, state
+choices 85%, and unsafe-change assessments 80%; uncertain results are
+**ambiguous**. Automatic writes remain enabled, with optional dry-run, manual
+assessment, and cache warming. Unrelated labels are preserved. These are
 advisory assessments, not safety guarantees or implementation gates. See
 [automatic Laya issue labeling](./docs/agent-orchestration.md#automatic-laya-issue-labeling)
 for the label names, context limits, and recovery instructions.
