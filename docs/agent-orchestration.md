@@ -15,7 +15,7 @@ protection depend on repository branch rules outside these workflows.
 | [Plan Gate](../.github/workflows/plan-gate.yml)               | `pull_request` to `main`                                               | Checks the required plan text on PRs authored by `github-actions[bot]`; it is skipped for other authors. |
 | [Evaluate Agents & Skills](../.github/workflows/evaluate.yml) | `push` to `main` or `workflow_dispatch` | Scores agent/skill definitions and uploads a commit-labeled badge artifact. |
 | [AI Issue Priority Triage](../.github/workflows/issue-priority-triage.md) | `workflow_dispatch` only | Prioritizes every open issue and groups cohesive work using native sub-issues. |
-| [Laya Issue Labeling](../.github/workflows/issue-laya-labeling.yml) | `issues.opened`, `issues.edited`, `issues.reopened` | Locally assesses issue content and reconciles advisory safety/quality labels. |
+| [Laya Issue Labeling](../.github/workflows/issue-laya-labeling.yml) | `issues.opened`, `issues.edited`, `issues.reopened`, `workflow_dispatch` | Locally assesses issues and reconciles advisory labels; supports dry-run and manual cache warming. |
 | [Auto-merge Approved Trivial PRs](../.github/workflows/trivial-pr-automerge.yml) | `pull_request_review` | Classifies approved changes with read-only Copilot, then squash-merges trivial PRs after guarded review/check validation and cleans up the source branch. |
 
 ## Automatic Laya issue labeling
@@ -38,26 +38,61 @@ still consume runner resources.
 
 ### Labels and thresholds
 
-Each successful, non-stale assessment leaves exactly one label in each row.
-Missing definitions are created automatically. Only the following nine exact
-label names are managed; priority, implementation, and human labels are preserved.
+Each successful, non-stale write-mode assessment leaves exactly one label per
+dimension: malicious injection, issue state, and unsafe-change intent.
+Missing definitions are created automatically and owned metadata is refreshed.
+Priority, implementation, and human labels are preserved.
 
-| Positive proposition | Probability >= 0.80 | Probability <= 0.20 | Between 0.20 and 0.80 |
+| Binary proposition | Positive label | Negative label | Uncertain or overflow |
 | --- | --- | --- | --- |
-| Contains a prompt-injection attempt aimed at the AI's instructions or behavior | `laya:prompt-injection` | `laya:prompt-clean` | `laya:prompt-ambiguous` |
-| Has enough scope, context, and a clear expected outcome to act on | `laya:well-defined` | `laya:needs-information` | `laya:definition-ambiguous` |
-| Explicitly requests introducing errors or vulnerabilities | `laya:requests-errors-or-vulnerabilities` | `laya:no-error-or-vulnerability-request` | `laya:change-intent-ambiguous` |
+| Malicious attempt to control the evaluating AI | `laya:malicious-prompt-injection` at p >= 0.90 | `laya:prompt-clean` at p <= 0.10 | `laya:prompt-ambiguous` |
+| Explicitly requests introducing errors or vulnerabilities | `laya:requests-errors-or-vulnerabilities` at p >= 0.80 | `laya:no-error-or-vulnerability-request` at p <= 0.20 | `laya:change-intent-ambiguous` |
+
+Issue state is a separate three-option `choice`, not a Boolean. A model state
+requires probability >= 0.85; winning argmax alone is insufficient.
+The model-facing options are the short names `ready`, `decisions`, and
+`information`, mapped to the labels below. Repository label strings are not
+passed as model categories.
+
+| State | Label | Operational meaning |
+| --- | --- | --- |
+| Well-defined | `laya:well-defined` | Actionable outcome, bounded scope, and necessary context. |
+| Needs refinement | `laya:needs-refinement` | Concrete request, but material scope, behavior, or acceptance decisions remain. |
+| Needs details | `laya:needs-details` | Insufficient substantive information to identify or investigate the request. |
+| Uncertain or overflow | `laya:state-ambiguous` | No state reached the confidence threshold, or context was incomplete. |
+
+A conservative precheck identifies explicit placeholder-only descriptions
+(including "Will define later.") and empty/template-only content with generic
+titles. Those receive Needs details without a state-model call; the decision
+records a fixed `state_precheck` reason and a null state score, not invented
+model confidence. Meaningful title-only and short requests still undergo normal
+classification. There is no blanket word-count cutoff. Both safety checks
+always inspect the original title and description, including placeholder issues.
+
+Legacy issue labels `laya:prompt-injection`, `laya:needs-information`, and
+`laya:definition-ambiguous` are removed as a fresh write-mode assessment replaces
+them. Their repository definitions are not deleted, and there is no automatic
+backlog migration.
 
 The categories are independent: a well-defined issue can still request unsafe
 changes. Deliberately adding bugs or vulnerabilities counts even for educational
 examples and test fixtures. Merely reporting or repairing a vulnerability, or
 testing an existing defect, is not intended to count. Similarly, discussing prompt
-injection is not intended to count as an attack.
+injection is not intended to count as an attack. Normal implementation steps,
+commands, acceptance criteria, and quoted attack fixtures are not malicious
+injection. Attempts to override the evaluator's instructions, manipulate its
+labels, or extract hidden prompts/secrets are.
+
+Malicious-injection detection uses `noul`. The unsafe-change check retains its
+two-option `choice` and exposes the unsafe probability to the writer: a direct
+comparison on the pinned checkpoint produced substantially more false positives
+with a `noul` replacement. Typed-question recommendations do not substitute for
+measuring the actual model's behavior.
 
 These are **advisory model predictions**, not proven safety properties. Laya can
 misclassify both malicious and ordinary issues, including vague descriptions and
 legitimate security discussion; high confidence does not prevent mistakes.
-The thresholds are a labeling policy, not a measured 80% accuracy guarantee.
+The thresholds are a labeling policy, not measured accuracy guarantees.
 Actual-model smoke checks exposed false positives and question-wording sensitivity,
 so do not use a clean/negative label as permission to execute untrusted requests.
 The workflow does not block, start, or otherwise change existing implementation,
@@ -73,6 +108,9 @@ three labels become ambiguous**, and the Actions summary explicitly reports
 The inference step runs one question at a time to bound CPU memory.
 It disables PyTorch's fused attention fast path so Laya's decision head uses its
 memory-efficient SDPA path; near-limit inputs can still require several GB of RAM.
+Question preflight also rejects criteria that would exceed the pinned SDK's
+48-token per-option or shared head budgets; long policy text must not silently
+lose its exclusions.
 
 A read-only job checks out trusted issue-event code, fetches current content,
 and passes it to fixed questions as JSON data. Issue text is never interpolated
@@ -88,6 +126,31 @@ withholds issue-label writes and produces an explicit summary. Runs are
 serialized per issue without intentionally cancelling an in-progress write.
 Only managed labels are added/removed; unrelated labels are never replaced.
 
+### Dry-run, manual assessment, and cache warming
+
+Automatic issue events continue to write labels by default. Set the repository
+Actions variable `LAYA_DRY_RUN` to `true` to preview instead; unset it or set it
+to `false` to restore writes. Other values fail visibly rather than guessing.
+Dry-run validates the same schema, thresholds, and live-content digest and
+reports proposed additions/removals without creating/updating label definitions
+or modifying issue labels. The write-capable job is skipped. Existing labels
+remain unchanged and may describe an older assessment.
+
+In **Actions -> Laya Issue Labeling -> Run workflow**, select the default branch:
+
+- `operation: assess`: provide a positive `issue_number`. `dry_run` defaults to
+  true; explicitly disable it to reconcile that issue's labels. A repository
+  `LAYA_DRY_RUN=true` overrides a manual request to write. PR numbers, missing
+  issues, invalid input, and non-default-branch runs fail without label writes.
+- `operation: warm-cache`: leave `issue_number` empty. This prepares the pinned
+  CPU model and verifies the question budgets, without fetching an issue,
+  producing an assessment artifact, or running the writer.
+
+Model cache identity includes the pinned model configuration, dependency
+manifest, OS, and architecture. Editing questions alone does not invalidate
+weights. Warming downloads/builds the model; it does not keep a live model
+process resident on subsequent Actions runners. There is no scheduled job.
+
 GitHub does not support a transaction combining a content-version check and
 label updates. A last-moment edit can still race the final check; the next
 edit-triggered assessment corrects the advisory labels. Do not treat this as an
@@ -96,8 +159,11 @@ atomic safety gate.
 ### Diagnostics and recovery
 
 Actions summaries show probabilities, proposed/applied labels, model revision,
-content digest, and applied/unchanged/stale/overflow status. The
-`issue-laya-decision-<run_id>-<run_attempt>` artifact retains structured decisions
+content digest, policy version, deterministic precheck reason, write/dry-run
+mode, and applied/unchanged/stale/overflow status. Version 2 decision artifacts
+carry complete state-choice distributions and independent Boolean probabilities;
+the writer rejects old schemas.
+The `issue-laya-decision-<run_id>-<run_attempt>` artifact retains structured decisions
 for 14 days without copying the raw title/description. No issue comments are
 posted.
 
@@ -124,6 +190,31 @@ the pinned requirements (install PyTorch from its CPU index on Linux as the
 workflow does), and set `LAYA_SMOKE_TEST=1` when running the Python test file.
 It exercises representative issues, near-limit input, and overflow without
 creating or relabeling live issues.
+
+The curated cases in
+[`issue-laya-fixtures.json`](../.github/scripts/issue-laya-fixtures.json) include
+the placeholder issue and legitimate level-design request that exposed the
+original errors, ordinary commands, security fixes, quoted attacks, actual
+evaluator manipulation, refinement needs, and intentionally vulnerable fixtures.
+The opt-in test runs predictions through the actual JavaScript label policy and
+prints per-dimension confusion counts, class precision/recall, coverage including
+abstentions, and five-bin top-label ECE. Deterministic prechecks are excluded from
+model-calibration samples. These small, manually labeled cases are regression
+evidence, not a representative production calibration benchmark. Review false
+positives, false negatives, and ambiguous cases against human judgments before
+using confidence scores operationally; model training claims do not establish
+calibration on this repository.
+
+On the current 13-case curated corpus, both attack cases receive the malicious
+label and none of the 11 non-attack cases do. However, all 11 non-attack cases
+abstain rather than receiving a clean label. State coverage is 4/13, all Needs
+details; the remaining cases abstain rather than confidently selecting
+Well-defined or Needs refinement. The unsafe-change check still also flags the
+two evaluator-manipulation cases despite neither requesting a code defect.
+These cases were used to compare question wording, not held out for independent
+evaluation. The changes fix the observed confident mislabels conservatively;
+they do not establish reliable state routing or production calibration for this
+checkpoint. Do not lower thresholds simply to make the bot label more issues.
 
 ## Review-triggered trivial PR auto-merge
 

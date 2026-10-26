@@ -3,11 +3,25 @@ name: Laya Issue Labeling
 on:
   issues:
     types: [opened, edited, reopened]
+  workflow_dispatch:
+    inputs:
+      operation:
+        description: Assess an issue or prepare the pinned model cache
+        type: choice
+        options: [assess, warm-cache]
+        default: assess
+      issue_number:
+        description: Issue number (required for assess; leave empty for warm-cache)
+        type: string
+      dry_run:
+        description: Preview without creating or changing labels
+        type: boolean
+        default: true
 
 permissions: {}
 
 concurrency:
-  group: issue-laya-labeling-${{ github.event.issue.number }}
+  group: issue-laya-labeling-${{ github.event.issue.number || inputs.issue_number || 'cache' }}
   cancel-in-progress: false
 
 jobs:
@@ -20,10 +34,23 @@ jobs:
       issues: read
     outputs:
       source_sha: ${{ steps.source.outputs.sha }}
+      issue_number: ${{ steps.configuration.outputs.issue_number }}
+      dry_run: ${{ steps.configuration.outputs.dry_run }}
+      operation: ${{ steps.configuration.outputs.operation }}
     env:
       HF_HUB_DISABLE_TELEMETRY: "1"
       USE_TF: "0"
     steps:
+      - name: Require trusted manual revision
+        if: github.event_name == 'workflow_dispatch'
+        env:
+          EXPECTED_REF: refs/heads/${{ github.event.repository.default_branch }}
+        run: |
+          if [ "$GITHUB_REF" != "$EXPECTED_REF" ]; then
+            echo "::error::Manual Laya runs require the default branch."
+            exit 1
+          fi
+
       - name: Checkout trusted issue-event revision
         uses: actions/checkout@v7
         with:
@@ -34,8 +61,30 @@ jobs:
         id: source
         run: echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
 
-      - name: Collect current title and description
+      - name: Validate run configuration
+        id: configuration
         uses: actions/github-script@v9
+        env:
+          LAYA_DRY_RUN: ${{ vars.LAYA_DRY_RUN }}
+        with:
+          script: |
+            const path = require("node:path");
+            const { createHash } = require("node:crypto");
+            const { MODEL, runConfiguration } = require(path.join(process.env.GITHUB_WORKSPACE, ".github/scripts/issue-laya-labels.cjs"));
+            const configuration = runConfiguration({
+              event: context.payload, eventName: context.eventName, ref: process.env.GITHUB_REF,
+              dryRunVariable: process.env.LAYA_DRY_RUN,
+            });
+            core.setOutput("operation", configuration.operation);
+            core.setOutput("issue_number", configuration.issueNumber ?? "");
+            core.setOutput("dry_run", String(configuration.dryRun));
+            core.setOutput("model_key", createHash("sha256").update(JSON.stringify(MODEL)).digest("hex"));
+
+      - name: Collect current title and description
+        if: steps.configuration.outputs.operation == 'assess'
+        uses: actions/github-script@v9
+        env:
+          ISSUE_NUMBER: ${{ steps.configuration.outputs.issue_number }}
         with:
           script: |
             const fs = require("node:fs");
@@ -43,7 +92,8 @@ jobs:
             const { collectSnapshot } = require(path.join(process.env.GITHUB_WORKSPACE, ".github/scripts/issue-laya-labels.cjs"));
             const snapshot = await collectSnapshot({
               github, event: context.payload, repository: process.env.GITHUB_REPOSITORY,
-              issueNumber: context.issue.number, runId: process.env.GITHUB_RUN_ID,
+              eventName: context.eventName, ref: process.env.GITHUB_REF,
+              issueNumber: Number(process.env.ISSUE_NUMBER), runId: process.env.GITHUB_RUN_ID,
               runAttempt: process.env.GITHUB_RUN_ATTEMPT, sourceSha: process.env.GITHUB_SHA,
             });
             fs.mkdirSync(path.join(process.env.RUNNER_TEMP, "issue-laya"), { recursive: true });
@@ -65,30 +115,50 @@ jobs:
         uses: actions/cache@v6
         with:
           path: ${{ runner.temp }}/issue-laya-hub
-          key: issue-laya-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('.github/scripts/issue-laya-requirements.txt', '.github/scripts/issue-laya-classify.py') }}
+          key: issue-laya-${{ runner.os }}-${{ runner.arch }}-${{ steps.configuration.outputs.model_key }}-${{ hashFiles('.github/scripts/issue-laya-requirements.txt') }}
+
+      - name: Warm pinned model cache
+        if: steps.configuration.outputs.operation == 'warm-cache'
+        env:
+          HF_HOME: ${{ runner.temp }}/issue-laya-hub
+        run: |
+          python .github/scripts/issue-laya-classify.py --warm-cache
+          echo "Pinned Laya model cache prepared. No issue was assessed or changed." >> "$GITHUB_STEP_SUMMARY"
 
       - name: Classify issue text as data
+        if: steps.configuration.outputs.operation == 'assess'
         env:
           HF_HOME: ${{ runner.temp }}/issue-laya-hub
         run: python .github/scripts/issue-laya-classify.py "$RUNNER_TEMP/issue-laya/snapshot.json" "$RUNNER_TEMP/issue-laya/decision.json"
 
       - name: Validate and summarize assessment
+        if: steps.configuration.outputs.operation == 'assess'
         uses: actions/github-script@v9
+        env:
+          ISSUE_NUMBER: ${{ steps.configuration.outputs.issue_number }}
+          LAYA_DRY_RUN: ${{ steps.configuration.outputs.dry_run }}
         with:
           script: |
             const fs = require("node:fs");
             const path = require("node:path");
-            const { labelsFor } = require(path.join(process.env.GITHUB_WORKSPACE, ".github/scripts/issue-laya-labels.cjs"));
+            const { POLICY, reconcile } = require(path.join(process.env.GITHUB_WORKSPACE, ".github/scripts/issue-laya-labels.cjs"));
             const decision = JSON.parse(fs.readFileSync(path.join(process.env.RUNNER_TEMP, "issue-laya/decision.json"), "utf8"));
-            const labels = labelsFor(decision, {
+            const preview = await reconcile({
+              github, decision, dryRun: true,
               event: context.payload, repository: process.env.GITHUB_REPOSITORY,
-              issueNumber: context.issue.number, runId: process.env.GITHUB_RUN_ID,
+              eventName: context.eventName, ref: process.env.GITHUB_REF,
+              issueNumber: Number(process.env.ISSUE_NUMBER), runId: process.env.GITHUB_RUN_ID,
               runAttempt: process.env.GITHUB_RUN_ATTEMPT, sourceSha: process.env.GITHUB_SHA,
             });
+            if (preview.status === "stale") core.warning(preview.reason);
             await core.summary.addHeading("Advisory Laya assessment")
-              .addCodeBlock(JSON.stringify({ ...decision, labels }, null, 2), "json").write();
+              .addCodeBlock(JSON.stringify({
+                ...decision, policy: POLICY, mode: process.env.LAYA_DRY_RUN === "true" ? "dry-run" : "write",
+                preview,
+              }, null, 2), "json").write();
 
       - name: Upload validated decision only
+        if: steps.configuration.outputs.operation == 'assess'
         uses: actions/upload-artifact@v7
         with:
           name: issue-laya-decision-${{ github.run_id }}-${{ github.run_attempt }}
@@ -103,6 +173,7 @@ jobs:
   label:
     name: Reconcile advisory labels
     needs: classify
+    if: needs.classify.outputs.operation == 'assess' && needs.classify.outputs.dry_run == 'false'
     runs-on: ubuntu-latest
     timeout-minutes: 5
     permissions:
@@ -123,20 +194,25 @@ jobs:
 
       - name: Revalidate current issue and reconcile managed labels
         uses: actions/github-script@v9
+        env:
+          ISSUE_NUMBER: ${{ needs.classify.outputs.issue_number }}
+          LAYA_DRY_RUN: ${{ vars.LAYA_DRY_RUN }}
         with:
           script: |
             const fs = require("node:fs");
             const path = require("node:path");
-            const { reconcile } = require(path.join(process.env.GITHUB_WORKSPACE, ".github/scripts/issue-laya-labels.cjs"));
+            const { POLICY, reconcile } = require(path.join(process.env.GITHUB_WORKSPACE, ".github/scripts/issue-laya-labels.cjs"));
             const result = await reconcile({
               github, event: context.payload, repository: process.env.GITHUB_REPOSITORY,
-              issueNumber: context.issue.number, runId: process.env.GITHUB_RUN_ID,
+              eventName: context.eventName, ref: process.env.GITHUB_REF, dryRun: false,
+              dryRunVariable: process.env.LAYA_DRY_RUN,
+              issueNumber: Number(process.env.ISSUE_NUMBER), runId: process.env.GITHUB_RUN_ID,
               runAttempt: process.env.GITHUB_RUN_ATTEMPT, sourceSha: process.env.GITHUB_SHA,
               decision: JSON.parse(fs.readFileSync(path.join(process.env.RUNNER_TEMP, "issue-laya-decision/decision.json"), "utf8")),
             });
             if (result.status === "stale") core.warning(result.reason);
             await core.summary.addHeading(`Issue labels: ${result.status}`)
-              .addCodeBlock(JSON.stringify(result, null, 2), "json").write();
+              .addCodeBlock(JSON.stringify({ ...result, policy: POLICY, mode: "write" }, null, 2), "json").write();
 
       - name: Report incomplete reconciliation
         if: failure()
