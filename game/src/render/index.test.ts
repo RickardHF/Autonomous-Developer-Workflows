@@ -51,8 +51,8 @@ describe("render", () => {
     expect(addColorStop).toHaveBeenCalledWith(0, SCENE_BACKGROUND);
     expect(addColorStop).toHaveBeenCalledWith(0.55, "#f58b7e");
     expect(drawing.bezierCurveTo).toHaveBeenCalled();
-    expect(drawing.roundRect).toHaveBeenCalledWith(79, 168, 109, 31, 12);
-    expect(drawing.translate).toHaveBeenCalledWith(400, 225);
+    expect(drawing.roundRect).toHaveBeenCalledWith(80, 300, 180, 22, 12);
+    expect(drawing.translate).toHaveBeenCalledWith(400, 359);
     expect(drawing.ellipse).toHaveBeenCalledWith(-13, 3, 4.3, 6.3, 0, 0, Math.PI * 2);
     expect(drawing.quadraticCurveTo).toHaveBeenCalledWith(0, 20, 5, 14);
     expect(drawing.fillText).not.toHaveBeenCalled();
@@ -71,21 +71,25 @@ describe("render", () => {
       [2, 0, 0, 2, 0, 0],
       [2, 0, 0, 2, 0, 0],
     ]);
-    expect(drawing.translate).toHaveBeenCalledWith(state.shapeX, state.shapeY);
+    expect(drawing.translate).toHaveBeenCalledWith(400, 359);
     expect(state).toEqual(createInitialState());
   });
 
   it("adds time-based bobbing and squash without changing the state's position", () => {
     const { context, drawing } = createContext();
-    const state = { ...createInitialState(), elapsed: 0.5, shapeX: 512 };
+    const state = {
+      ...createInitialState(),
+      elapsed: 0.5,
+      player: { ...createInitialState().player, x: 487 },
+    };
     const wobble = Math.sin(1.5);
 
     render(context, state);
 
-    expect(drawing.translate).toHaveBeenCalledWith(512, 225 + wobble * 2.5);
+    expect(drawing.translate).toHaveBeenCalledWith(512, 359 + wobble * 2.5);
     expect(drawing.scale).toHaveBeenCalledWith(1 + wobble * 0.035, 1 - wobble * 0.045);
-    expect(state.shapeX).toBe(512);
-    expect(state.shapeY).toBe(225);
+    expect(state.player.x).toBe(487);
+    expect(state.player.y).toBe(318);
   });
 
   it("freezes decorative motion and blinking under reduced motion", () => {
@@ -98,7 +102,7 @@ describe("render", () => {
     expect(first.drawing.translate.mock.calls).toEqual(second.drawing.translate.mock.calls);
     expect(first.drawing.scale.mock.calls).toEqual(second.drawing.scale.mock.calls);
     expect(first.drawing.ellipse.mock.calls).toEqual(second.drawing.ellipse.mock.calls);
-    expect(first.drawing.translate).toHaveBeenCalledWith(400, 225);
+    expect(first.drawing.translate).toHaveBeenCalledWith(400, 359);
     expect(first.drawing.scale).toHaveBeenCalledWith(1, 1);
     expect(first.drawing.ellipse).toHaveBeenCalledWith(-13, 3, 4.3, 6.3, 0, 0, Math.PI * 2);
   });
@@ -106,9 +110,12 @@ describe("render", () => {
   it("keeps the current position and faces the movement direction under reduced motion", () => {
     const { context, drawing } = createContext();
 
-    render(context, { ...createInitialState(), shapeX: 80, velocityX: -80 }, { reducedMotion: true });
+    render(context, {
+      ...createInitialState(),
+      player: { ...createInitialState().player, x: 55, velocityX: -80 },
+    }, { reducedMotion: true });
 
-    expect(drawing.translate).toHaveBeenCalledWith(80, 225);
+    expect(drawing.translate).toHaveBeenCalledWith(80, 359);
     expect(drawing.translate).toHaveBeenLastCalledWith(-4, 0);
   });
 

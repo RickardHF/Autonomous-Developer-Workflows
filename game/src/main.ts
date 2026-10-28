@@ -95,7 +95,7 @@ export function bootGame(documentRoot: Document): () => void {
     const actions: GameActions = {
       left: input.isActionActive("left"),
       right: input.isActionActive("right"),
-      jump: input.isActionActive("jump"),
+      jump: input.consumeActionPress("jump"),
       pause: paused,
     };
     const wasPaused = state.paused;

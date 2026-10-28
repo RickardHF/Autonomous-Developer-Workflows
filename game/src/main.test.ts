@@ -136,7 +136,7 @@ describe("game preview", () => {
 
     expect(render).toHaveBeenLastCalledWith(
       context,
-      expect.objectContaining({ elapsed: 0.1, shapeX: 408, shapeY: 225, velocityX: 80 }),
+      expect.objectContaining({ elapsed: 0.1, player: expect.objectContaining({ x: 375, velocityX: 0 }) }),
       { reducedMotion: false },
     );
     stop();
@@ -157,7 +157,7 @@ describe("game preview", () => {
     expect(canvas.height).toBe(540);
     expect(render).toHaveBeenLastCalledWith(
       context,
-      expect.objectContaining({ elapsed: 0.1, shapeX: 408, shapeY: 225, velocityX: 80 }),
+      expect.objectContaining({ elapsed: 0.1, player: expect.objectContaining({ x: 375, velocityX: 0 }) }),
       { reducedMotion: false },
     );
     stop();
@@ -172,14 +172,14 @@ describe("game preview", () => {
 
     expect(render).toHaveBeenLastCalledWith(
       context,
-      expect.objectContaining({ elapsed: 0.1, shapeX: 408, shapeY: 225, velocityX: 80 }),
+      expect.objectContaining({ elapsed: 0.1, player: expect.objectContaining({ x: 375, velocityX: 0 }) }),
       { reducedMotion: true },
     );
     preference.matches = false;
     frame(200);
     expect(render).toHaveBeenLastCalledWith(
       context,
-      expect.objectContaining({ elapsed: 0.2, shapeX: 416, shapeY: 225, velocityX: 80 }),
+      expect.objectContaining({ elapsed: 0.2, player: expect.objectContaining({ x: 375, velocityX: 0 }) }),
       { reducedMotion: false },
     );
     stop();
@@ -252,7 +252,7 @@ describe("canvas sizing", () => {
     frame(1025);
     expect(render).toHaveBeenLastCalledWith(
       context,
-      expect.objectContaining({ shapeX: 402, jumpRequested: false }),
+      expect.objectContaining({ player: expect.objectContaining({ x: 375 }), squashEvent: null }),
       { reducedMotion: false },
     );
 
@@ -262,7 +262,10 @@ describe("canvas sizing", () => {
 
     expect(render).toHaveBeenLastCalledWith(
       context,
-      expect.objectContaining({ shapeX: 404, jumpRequested: true }),
+      expect.objectContaining({
+        player: expect.objectContaining({ x: 376.5, velocityY: -700 }),
+        squashEvent: "jump",
+      }),
       { reducedMotion: false },
     );
 
@@ -270,7 +273,7 @@ describe("canvas sizing", () => {
     frame(1100);
     expect(render).toHaveBeenLastCalledWith(
       context,
-      expect.objectContaining({ shapeX: 404, paused: true }),
+      expect.objectContaining({ player: expect.objectContaining({ x: 376.5 }), paused: true }),
       { reducedMotion: false },
     );
     expect(pauseButton.textContent).toBe("Resume animation");
@@ -285,7 +288,7 @@ describe("canvas sizing", () => {
     frame(1150);
     expect(render).toHaveBeenLastCalledWith(
       context,
-      expect.objectContaining({ shapeX: 408, paused: false }),
+      expect.objectContaining({ player: expect.objectContaining({ x: 385.5 }), paused: false }),
       { reducedMotion: false },
     );
 
@@ -293,7 +296,7 @@ describe("canvas sizing", () => {
     frame(1200);
     expect(render).toHaveBeenLastCalledWith(
       context,
-      expect.objectContaining({ shapeX: 408, paused: true }),
+      expect.objectContaining({ player: expect.objectContaining({ x: 385.5 }), paused: true }),
       { reducedMotion: false },
     );
     expect(pauseButton.textContent).toBe("Resume animation");
