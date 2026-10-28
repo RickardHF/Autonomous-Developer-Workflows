@@ -1,0 +1,58 @@
+<!doctype html>
+<!--
+THESIS: Follow delivery from issue to evidence; the workflow path is the navigation.
+OWN-WORLD: App-native typography, cool layered neutrals, crisp connectors and five semantic state colors.
+STORY: Choose a run, select a phase, unfold its artifacts without losing context.
+FIRST VIEWPORT: Compact run context, connected five-stage path, then the selected phase's artifact stack.
+FORM: User-directed workflow inspector, not an analytics dashboard. Review exposes its two parallel branches.
+-->
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="referrer" content="no-referrer">
+  <title>Issue delivery runs</title>
+  <link rel="stylesheet" href="dashboard.css">
+  <script type="module" src="dashboard.js"></script>
+</head>
+<body>
+  <header class="app-header">
+    <div class="app-title"><span id="app-symbol" class="app-symbol"></span><div><h1>Issue delivery runs</h1><p class="muted">From issue to implementation, with the evidence in view.</p></div></div>
+    <button id="refresh" type="button" class="refresh-button"><span id="refresh-symbol"></span><span>Refresh</span></button>
+  </header>
+  <p id="connection" class="notice" role="status" hidden></p>
+  <div class="workspace">
+    <aside class="run-sidebar" aria-label="Run selection">
+      <div class="list-heading"><h2>Run history</h2><span id="run-count" class="muted" role="status"></span></div>
+      <label class="compact-picker" for="run-picker">Current run</label>
+      <select id="run-picker" class="compact-picker" aria-label="Select run"></select>
+      <nav id="runs" aria-label="Recorded runs"><p class="muted">Loading runs...</p></nav>
+    </aside>
+    <main>
+      <p id="empty" class="empty" role="status">Loading recorded runs...</p>
+      <div id="run-detail" hidden>
+        <section id="overview" aria-label="Run overview"></section>
+        <section class="workflow-section" aria-labelledby="phase-heading">
+          <div class="section-heading"><h2 id="phase-heading">Delivery path</h2><span class="read-only">Read-only</span></div>
+          <div class="path-scroll"><div id="phases" class="phases" role="tablist" aria-label="Workflow phases"></div></div>
+          <div class="path-footer"><p id="phase-note" class="muted"></p><ul class="state-legend" aria-label="Phase status colors">
+            <li data-color="green">Completed</li><li data-color="gray">Not started / skipped</li><li data-color="red">Error</li><li data-color="blue">In progress</li><li data-color="yellow">Closed unfinished</li>
+          </ul></div>
+        </section>
+        <section id="phase-panel" class="phase-panel" role="tabpanel" tabindex="0">
+          <header id="selected-phase" class="selected-phase"></header>
+          <div id="checkout" hidden></div>
+          <div id="review-branches" class="review-branches" hidden></div>
+          <div id="phase-artifacts" class="artifact-stack"></div>
+          <details class="activity-disclosure">
+            <summary><span id="activity-symbol"></span><span>Phase activity</span><span id="progress-count" class="muted"></span></summary>
+            <p id="progress-note" class="muted"></p>
+            <ol id="progress" class="progress"></ol>
+          </details>
+        </section>
+        <details id="run-files" class="run-files"><summary>Run-level &amp; other files <span id="run-files-count" class="muted"></span></summary><p class="muted">Runtime observations, the original new-file manifest, and other recorded files.</p><div id="run-artifacts" class="artifact-stack"></div></details>
+      </div>
+    </main>
+  </div>
+</body>
+</html>
